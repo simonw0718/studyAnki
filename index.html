@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Study Deck</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="app-header">
+        <div class="brand">
+          <div class="brand-mark" id="brandMark">卡</div>
+          <div>
+            <h1 id="brandTitle">Study Deck</h1>
+            <p id="brandSubtitle">泛用製卡與複習</p>
+          </div>
+        </div>
+
+        <nav class="nav-list" aria-label="主要功能">
+          <button class="nav-item" data-view="add">新增</button>
+          <button class="nav-item active" data-view="review">複習</button>
+          <button class="nav-item" data-view="cards">卡片</button>
+          <button class="nav-item" data-view="decks">Tag</button>
+          <button class="nav-item" data-view="settings">選項</button>
+          <button class="nav-item" data-view="notes">筆記清單</button>
+        </nav>
+
+        <label class="module-switch">
+          <span>模組</span>
+          <select id="moduleSelect">
+            <option value="generic">通用</option>
+            <option value="nihongo">日文</option>
+          </select>
+        </label>
+
+        <section class="daily-box">
+          <div>
+            <span>今日到期</span>
+            <strong id="dailyMax">0</strong>
+          </div>
+          <div>
+            <span>新卡</span>
+            <strong id="newCount">0</strong>
+          </div>
+          <div>
+            <span>複習</span>
+            <strong id="reviewCount">0</strong>
+          </div>
+        </section>
+      </header>
+
+      <main class="main">
+        <section class="topbar">
+          <div>
+            <p class="eyebrow" id="viewEyebrow">Add</p>
+            <h2 id="viewTitle">新增日文單字 / 文法</h2>
+          </div>
+        </section>
+
+        <section class="view" id="view-add">
+          <form class="composer" id="entryForm">
+            <div class="form-grid">
+              <label data-module-field="nihongo">
+                <span>類型</span>
+                <select id="entryType">
+                  <option value="custom">自訂</option>
+                </select>
+              </label>
+              <label data-module-field="nihongo">
+                <span>詞性</span>
+                <select id="partOfSpeechSelect">
+                  <option value="他動 G1">他動 G1</option>
+                  <option value="他動 G2">他動 G2</option>
+                  <option value="他動 G3">他動 G3</option>
+                  <option value="自動 G1">自動 G1</option>
+                  <option value="自動 G2">自動 G2</option>
+                  <option value="自動 G3">自動 G3</option>
+                  <option value="い形容詞">い形容詞</option>
+                  <option value="な形容詞">な形容詞</option>
+                  <option value="名詞">名詞</option>
+                  <option value="副詞">副詞</option>
+                  <option value="助詞">助詞</option>
+                  <option value="助動詞">助動詞</option>
+                  <option value="接續詞">接續詞</option>
+                  <option value="連體詞">連體詞</option>
+                  <option value="感動詞">感動詞</option>
+                  <option value="代名詞">代名詞</option>
+                  <option value="數詞">數詞</option>
+                  <option value="接頭詞">接頭詞</option>
+                  <option value="接尾詞">接尾詞</option>
+                  <option value="表現">表現</option>
+                  <option value="文法">文法</option>
+                </select>
+              </label>
+              <label data-module-field="nihongo">
+                <span>Tags</span>
+                <div class="tag-picker" id="tagPicker"></div>
+              </label>
+            </div>
+
+            <label data-module-field="nihongo">
+              <span>日文</span>
+              <input id="termInput" autocomplete="off" placeholder="例：食べる / 〜てもいい" required />
+            </label>
+
+            <label data-module-field="nihongo">
+              <span>讀音</span>
+              <input id="readingInput" autocomplete="off" placeholder="例：たべる" />
+            </label>
+
+            <label data-module-field="nihongo">
+              <span>翻譯，多個意思用換行分開</span>
+              <textarea id="translationsInput" rows="4" placeholder="例：吃&#10;食用&#10;生活；維生"></textarea>
+            </label>
+
+            <label data-module-field="nihongo">
+              <span>例句，每行對應一個翻譯</span>
+              <textarea id="examplesInput" rows="4" placeholder="例：朝ごはんを食べる。"></textarea>
+            </label>
+
+            <label data-module-field="generic">
+              <span>正面</span>
+              <textarea id="frontInput" rows="5" placeholder="輸入卡片正面" required></textarea>
+            </label>
+
+            <label data-module-field="generic">
+              <span>反面</span>
+              <textarea id="backInput" rows="7" placeholder="輸入卡片反面" required></textarea>
+            </label>
+
+            <div class="form-actions">
+              <button class="primary" type="submit">產生卡片</button>
+              <button class="ghost" id="lookupBtn" type="button" data-module-field="nihongo">查詢資料庫</button>
+            </div>
+          </form>
+
+          <section class="preview-panel">
+            <div class="panel-head">
+              <h3>將產生的卡片</h3>
+              <span id="previewStatus">等待輸入</span>
+            </div>
+            <div class="candidate-list" id="candidateList"></div>
+            <div class="preview-list" id="previewList"></div>
+          </section>
+        </section>
+
+        <section class="view active" id="view-review">
+          <div class="review-layout">
+            <section class="review-card" id="reviewCard">
+              <p class="muted">今天沒有到期卡片，或已達每日上限。</p>
+            </section>
+            <aside class="review-side">
+              <h3>今日進度</h3>
+              <div class="stat-row"><span>今日新卡</span><strong id="newRemaining">0</strong></div>
+              <div class="stat-row"><span>今日複習</span><strong id="reviewRemaining">0</strong></div>
+              <div class="stat-row"><span>待檢查</span><strong id="needsReviewCount">0</strong></div>
+            </aside>
+          </div>
+        </section>
+
+        <section class="view" id="view-cards">
+          <div class="table-toolbar">
+            <input id="cardSearch" placeholder="搜尋卡片、翻譯、Tag" />
+            <select id="cardTagFilter"></select>
+            <select id="cardStatusFilter">
+              <option value="all">全部狀態</option>
+              <option value="needs-review">待檢查</option>
+              <option value="active">已確認</option>
+            </select>
+          </div>
+          <div class="card-table" id="cardTable"></div>
+        </section>
+
+        <section class="view" id="view-decks">
+          <form class="deck-form" id="deckForm">
+            <input id="deckNameInput" placeholder="新增 Tag，例如 N4 / 易混淆 / 旅行" required />
+            <button class="primary" type="submit">新增 Tag</button>
+          </form>
+          <div class="deck-list" id="deckList"></div>
+        </section>
+
+        <section class="view" id="view-settings">
+          <div class="settings-grid">
+            <label>
+              <span>每天新卡數</span>
+              <input id="newLimitInput" type="number" min="0" max="200" />
+            </label>
+            <label>
+              <span>每天複習數</span>
+              <input id="reviewLimitInput" type="number" min="0" max="500" />
+            </label>
+          </div>
+          <p class="muted">每日最大量 = 新卡上限 + 複習上限。正向卡和反向卡會分別計算。</p>
+          <section class="danger-zone">
+            <div>
+              <h3>重置範例</h3>
+              <p class="muted">清除目前本機資料，重新載入 6 張固定測試卡。</p>
+            </div>
+            <button class="ghost danger" id="resetDemoBtn" type="button">重置範例</button>
+          </section>
+        </section>
+
+        <section class="view" id="view-notes">
+          <section class="notes-panel">
+            <label>
+              <span>待新增內容</span>
+              <textarea id="notesInput" rows="18" placeholder="把想之後新增成卡片的內容先放這裡"></textarea>
+            </label>
+            <div class="form-actions">
+              <button class="ghost danger" id="clearNotesBtn" type="button">清空筆記</button>
+            </div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <template id="previewTemplate">
+      <article class="mini-card">
+        <div>
+          <span class="pill"></span>
+          <h4></h4>
+          <p></p>
+        </div>
+      </article>
+    </template>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
