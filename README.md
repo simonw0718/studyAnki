@@ -57,7 +57,7 @@ If Cloudflare shows a required `Deploy command` field, use the Workers Static As
 
 ```text
 Build command: npm run build
-Deploy command: npx wrangler deploy
+Deploy command: npx wrangler deploy --assets=./dist
 Non-production branch deploy command: npx wrangler versions upload
 Path: /
 ```
