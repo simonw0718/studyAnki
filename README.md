@@ -38,6 +38,14 @@ Use these settings:
 ```text
 Build command: npm run build
 Build output directory: dist
+Node.js version: 22
+```
+
+The repository also includes `wrangler.toml`, so Wrangler can deploy the static build directly:
+
+```bash
+npm run build
+CLOUDFLARE_API_TOKEN=your_token npx wrangler pages deploy dist --project-name studyanki --branch main
 ```
 
 This repository is prepared for full static hosting. In a fully static deployment, live dictionary lookup may fall back to local mock candidates if a remote API blocks browser CORS requests. To support live lookup in production, add a Cloudflare Function/Worker proxy later.
