@@ -50,3 +50,14 @@ CLOUDFLARE_API_TOKEN=your_token npx wrangler pages deploy dist --project-name st
 ```
 
 This repository is prepared for full static hosting. In a fully static deployment, live dictionary lookup may fall back to local mock candidates if a remote API blocks browser CORS requests. To support live lookup in production, add a Cloudflare Function/Worker proxy later.
+
+## Cloudflare Workers Static Assets
+
+If Cloudflare shows a required `Deploy command` field, use the Workers Static Assets settings instead:
+
+```text
+Build command: npm run build
+Deploy command: npx wrangler deploy
+Non-production branch deploy command: npx wrangler versions upload
+Path: /
+```
