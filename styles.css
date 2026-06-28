@@ -28,6 +28,7 @@ body {
   background: var(--bg);
   color: var(--ink);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  -webkit-text-size-adjust: 100%;
 }
 
 button,
@@ -35,6 +36,7 @@ input,
 select,
 textarea {
   font: inherit;
+  touch-action: manipulation;
 }
 
 button {
@@ -612,5 +614,315 @@ textarea {
   .daily-box {
     flex-direction: column;
     align-items: stretch;
+  }
+}
+
+@media (max-width: 700px) {
+  body {
+    background: var(--surface);
+  }
+
+  .app-shell {
+    min-height: 100dvh;
+  }
+
+  .app-header {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    padding: calc(10px + env(safe-area-inset-top)) 14px 10px;
+    gap: 10px;
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.12);
+  }
+
+  .brand {
+    min-width: 0;
+  }
+
+  .brand-mark {
+    width: 36px;
+    height: 36px;
+    font-size: 18px;
+  }
+
+  .brand h1 {
+    font-size: 17px;
+    line-height: 1.15;
+  }
+
+  .brand p {
+    display: none;
+  }
+
+  .module-switch {
+    position: absolute;
+    top: calc(10px + env(safe-area-inset-top));
+    right: 14px;
+    min-width: 112px;
+  }
+
+  .module-switch span {
+    display: none;
+  }
+
+  .module-switch select {
+    min-height: 36px;
+    padding: 7px 28px 7px 10px;
+    font-size: 15px;
+  }
+
+  .daily-box {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .daily-box div {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+    padding: 8px;
+    border-radius: 8px;
+    background: #37403d;
+  }
+
+  .daily-box span {
+    font-size: 11px;
+  }
+
+  .daily-box strong {
+    font-size: 18px;
+    line-height: 1;
+  }
+
+  .nav-list {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 30;
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 0;
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+    background: rgba(35, 41, 39, 0.96);
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(18px);
+  }
+
+  .nav-item {
+    min-width: 0;
+    min-height: 48px;
+    padding: 6px 3px;
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 1.15;
+  }
+
+  .main {
+    padding: 16px 12px calc(82px + env(safe-area-inset-bottom));
+  }
+
+  .topbar {
+    margin-bottom: 14px;
+  }
+
+  .eyebrow {
+    font-size: 11px;
+  }
+
+  .topbar h2 {
+    font-size: 22px;
+    line-height: 1.2;
+  }
+
+  .composer,
+  .preview-panel,
+  .review-card,
+  .review-side,
+  .deck-form,
+  .deck-list,
+  .settings-grid,
+  .card-table,
+  .notes-panel,
+  .danger-zone {
+    border-left: 0;
+    border-right: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .composer,
+  .preview-panel,
+  .review-side,
+  .deck-form,
+  .deck-list,
+  .settings-grid,
+  .notes-panel,
+  .danger-zone {
+    margin-left: -12px;
+    margin-right: -12px;
+    padding: 16px 12px;
+  }
+
+  label {
+    font-size: 13px;
+  }
+
+  input,
+  select,
+  textarea {
+    min-height: 46px;
+    padding: 12px;
+    font-size: 16px;
+  }
+
+  textarea {
+    resize: vertical;
+  }
+
+  .form-actions,
+  .review-actions,
+  .row-actions,
+  .deck-item-actions {
+    gap: 8px;
+  }
+
+  .form-actions,
+  .table-toolbar,
+  .deck-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .primary,
+  .ghost,
+  .row-actions button,
+  .deck-item button {
+    min-height: 46px;
+  }
+
+  .form-actions .primary,
+  .form-actions .ghost,
+  .deck-form .primary {
+    width: 100%;
+  }
+
+  .candidate-item {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .review-layout {
+    gap: 12px;
+  }
+
+  .review-card {
+    min-height: calc(100dvh - 300px);
+    padding: 22px 14px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+  }
+
+  .review-front {
+    gap: 14px;
+  }
+
+  .review-front h3 {
+    font-size: clamp(30px, 10vw, 44px);
+    line-height: 1.18;
+    overflow-wrap: anywhere;
+  }
+
+  .answer {
+    max-height: 42dvh;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .review-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .review-actions button {
+    width: 100%;
+  }
+
+  .review-side {
+    order: -1;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .review-side h3 {
+    grid-column: 1 / -1;
+    font-size: 15px;
+  }
+
+  .stat-row {
+    display: grid;
+    gap: 4px;
+    justify-items: start;
+    padding: 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fbfaf7;
+  }
+
+  .stat-row span {
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .card-table {
+    margin-left: -12px;
+    margin-right: -12px;
+    border-left: 0;
+    border-right: 0;
+    border-radius: 0;
+  }
+
+  .card-row {
+    padding: 14px 12px;
+  }
+
+  .card-row-head,
+  .deck-item,
+  .danger-zone {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .row-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .row-actions button {
+    width: 100%;
+  }
+
+  #notesInput {
+    min-height: calc(100dvh - 270px);
+  }
+}
+
+@media (max-width: 380px) {
+  .nav-item {
+    font-size: 11px;
+  }
+
+  .module-switch {
+    min-width: 96px;
+  }
+
+  .daily-box div {
+    padding: 7px 6px;
   }
 }
