@@ -39,6 +39,7 @@ Use these settings:
 Build command: npm run build
 Build output directory: dist
 Node.js version: 22
+Deploy command: leave blank
 ```
 
 The repository also includes `wrangler.toml`, so Wrangler can deploy the static build directly:
