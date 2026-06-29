@@ -31,6 +31,15 @@ The static site is written to:
 dist/
 ```
 
+## Review Scheduling
+
+The app uses an Anki-like classic scheduler:
+
+- New cards enter learning steps: `1m`, then `10m`
+- Graduated cards enter review with day-based intervals
+- Failed review cards enter relearning for `10m`
+- New card and review card daily limits are tracked separately
+
 ## Cloudflare Pages
 
 Use these settings:

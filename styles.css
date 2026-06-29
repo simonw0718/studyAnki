@@ -536,6 +536,7 @@ textarea {
 .deck-list,
 .settings-grid,
 .notes-panel,
+.schedule-note,
 .danger-zone {
   padding: 18px;
 }
@@ -592,6 +593,18 @@ textarea {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+}
+
+.schedule-note {
+  margin-top: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.schedule-note h3 {
+  margin-bottom: 8px;
 }
 
 @media (max-width: 920px) {
@@ -748,6 +761,7 @@ textarea {
   .settings-grid,
   .card-table,
   .notes-panel,
+  .schedule-note,
   .danger-zone {
     border-left: 0;
     border-right: 0;
@@ -762,6 +776,7 @@ textarea {
   .deck-list,
   .settings-grid,
   .notes-panel,
+  .schedule-note,
   .danger-zone {
     margin-left: -12px;
     margin-right: -12px;

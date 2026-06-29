@@ -51,7 +51,7 @@
             <strong id="newCount">0</strong>
           </div>
           <div>
-            <span>複習</span>
+            <span>學習/複習</span>
             <strong id="reviewCount">0</strong>
           </div>
         </section>
@@ -160,7 +160,9 @@
             <aside class="review-side">
               <h3>今日進度</h3>
               <div class="stat-row"><span>今日新卡</span><strong id="newRemaining">0</strong></div>
+              <div class="stat-row"><span>學習中</span><strong id="learningRemaining">0</strong></div>
               <div class="stat-row"><span>今日複習</span><strong id="reviewRemaining">0</strong></div>
+              <div class="stat-row"><span>重新學習</span><strong id="relearningRemaining">0</strong></div>
               <div class="stat-row"><span>待檢查</span><strong id="needsReviewCount">0</strong></div>
             </aside>
           </div>
@@ -199,6 +201,10 @@
             </label>
           </div>
           <p class="muted">每日最大量 = 新卡上限 + 複習上限。正向卡和反向卡會分別計算。</p>
+          <section class="schedule-note">
+            <h3>Anki-like 排程</h3>
+            <p class="muted">新卡會先進入學習階段：1 分鐘、10 分鐘。答錯舊卡會進入重新學習：10 分鐘。畢業後才進入長期複習。</p>
+          </section>
           <section class="danger-zone">
             <div>
               <h3>重置範例</h3>

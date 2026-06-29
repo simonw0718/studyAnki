@@ -1,5 +1,19 @@
 const STORAGE_KEY = "study-deck-state-v7";
 const todayKey = getLocalDateKey();
+const now = () => Date.now();
+const minuteMs = 60 * 1000;
+const dayMs = 24 * 60 * minuteMs;
+
+const schedulerDefaults = {
+  learningStepsMinutes: [1, 10],
+  relearningStepsMinutes: [10],
+  graduatingInterval: 1,
+  easyInterval: 4,
+  hardFactor: 1.2,
+  easyBonus: 1.3,
+  intervalModifier: 1,
+  minimumEase: 1.3,
+};
 
 const seedDictionary = {
   "食べる": {
@@ -91,6 +105,7 @@ const initialState = {
   settings: {
     newLimit: 20,
     reviewLimit: 80,
+    scheduler: schedulerDefaults,
   },
   notes: "",
   progress: {
@@ -150,7 +165,9 @@ const els = {
   previewStatus: document.querySelector("#previewStatus"),
   reviewCard: document.querySelector("#reviewCard"),
   newRemaining: document.querySelector("#newRemaining"),
+  learningRemaining: document.querySelector("#learningRemaining"),
   reviewRemaining: document.querySelector("#reviewRemaining"),
+  relearningRemaining: document.querySelector("#relearningRemaining"),
   needsReviewCount: document.querySelector("#needsReviewCount"),
   cardSearch: document.querySelector("#cardSearch"),
   cardTagFilter: document.querySelector("#cardTagFilter"),
@@ -184,13 +201,23 @@ function normalizeState(input) {
     currentModule: input.currentModule || initialState.currentModule,
     tags: input.tags || input.decks || initialState.tags,
     notes: input.notes || "",
-    settings: { ...initialState.settings, ...(input.settings || {}) },
+    settings: {
+      ...initialState.settings,
+      ...(input.settings || {}),
+      scheduler: {
+        ...schedulerDefaults,
+        ...((input.settings || {}).scheduler || {}),
+      },
+    },
     progress: { ...initialState.progress, ...(input.progress || {}) },
   };
   merged.cards = (merged.cards || []).map((card) => ({
     ...card,
     module: card.module || "nihongo",
     tagIds: card.tagIds || (card.deckId ? [card.deckId] : ["uncategorized"]),
+    queue: card.queue || (card.reps > 0 ? "review" : "new"),
+    learningStep: Number.isFinite(card.learningStep) ? card.learningStep : 0,
+    dueAt: card.dueAt || dateKeyToTimestamp(card.due || todayKey),
   }));
   if (merged.progress.date !== todayKey) {
     merged.progress = { date: todayKey, newDone: 0, reviewDone: 0 };
@@ -211,6 +238,23 @@ function getLocalDateKey(date = new Date()) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function dateKeyToTimestamp(dateKey) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  return new Date(year, month - 1, day).getTime();
+}
+
+function timestampToDateKey(timestamp) {
+  return getLocalDateKey(new Date(timestamp));
+}
+
+function addMinutes(minutes) {
+  return now() + minutes * minuteMs;
+}
+
+function addDaysTimestamp(days) {
+  return now() + days * dayMs;
 }
 
 function parseLines(value) {
@@ -305,6 +349,9 @@ function buildGeneratedCards(entry) {
     status: "needs-review",
     createdAt: new Date().toISOString(),
     due: todayKey,
+    dueAt: now(),
+    queue: "new",
+    learningStep: 0,
     interval: 0,
     ease: 2.5,
     lapses: 0,
@@ -328,6 +375,9 @@ function buildGenericCard(entry) {
       status: "needs-review",
       createdAt: new Date().toISOString(),
       due: todayKey,
+      dueAt: now(),
+      queue: "new",
+      learningStep: 0,
       interval: 0,
       ease: 2.5,
       lapses: 0,
@@ -529,33 +579,66 @@ function renderTagOptions() {
 function renderStats() {
   const rawDueCards = getRawDueCards();
   const dueCards = getDueCards();
-  const rawNewDue = rawDueCards.filter((card) => card.reps === 0).length;
-  const rawReviewDue = rawDueCards.filter((card) => card.reps > 0).length;
-  const newDue = dueCards.filter((card) => card.reps === 0).length;
-  const reviewDue = dueCards.filter((card) => card.reps > 0).length;
-  const newRemaining = Math.max(0, state.settings.newLimit - state.progress.newDone);
-  const reviewRemaining = Math.max(0, state.settings.reviewLimit - state.progress.reviewDone);
+  const rawNewDue = rawDueCards.filter((card) => card.queue === "new").length;
+  const rawLearningDue = rawDueCards.filter((card) => card.queue === "learning").length;
+  const rawReviewDue = rawDueCards.filter((card) => card.queue === "review").length;
+  const rawRelearningDue = rawDueCards.filter((card) => card.queue === "relearning").length;
+  const newDue = dueCards.filter((card) => card.queue === "new").length;
+  const reviewDue = dueCards.filter((card) => card.queue === "review").length;
   els.dailyMax.textContent = String(rawDueCards.length);
   els.newCount.textContent = String(rawNewDue);
-  els.reviewCount.textContent = String(rawReviewDue);
+  els.reviewCount.textContent = String(rawLearningDue + rawReviewDue + rawRelearningDue);
   els.newRemaining.textContent = `${newDue} / ${rawNewDue}`;
+  els.learningRemaining.textContent = String(rawLearningDue);
   els.reviewRemaining.textContent = `${reviewDue} / ${rawReviewDue}`;
+  els.relearningRemaining.textContent = String(rawRelearningDue);
   els.needsReviewCount.textContent = String(state.cards.filter((card) => card.status === "needs-review").length);
 }
 
 function getRawDueCards() {
+  const currentTime = now();
   return state.cards
     .filter((card) => card.module === state.currentModule)
-    .filter((card) => card.due <= todayKey)
-    .sort((a, b) => a.due.localeCompare(b.due) || a.createdAt.localeCompare(b.createdAt));
+    .filter((card) => getCardDueAt(card) <= currentTime)
+    .sort((a, b) => getQueuePriority(a) - getQueuePriority(b) || getCardDueAt(a) - getCardDueAt(b) || a.createdAt.localeCompare(b.createdAt));
 }
 
 function getDueCards() {
   return getRawDueCards()
     .filter((card) => {
-      if (card.reps === 0) return state.progress.newDone < state.settings.newLimit;
-      return state.progress.reviewDone < state.settings.reviewLimit;
+      if (card.queue === "new") return state.progress.newDone < state.settings.newLimit;
+      if (card.queue === "review") return state.progress.reviewDone < state.settings.reviewLimit;
+      return true;
     });
+}
+
+function getCardDueAt(card) {
+  return card.dueAt || dateKeyToTimestamp(card.due || todayKey);
+}
+
+function getQueuePriority(card) {
+  return {
+    learning: 0,
+    relearning: 1,
+    review: 2,
+    new: 3,
+  }[card.queue || "new"] ?? 4;
+}
+
+function getQueueLabel(queue) {
+  return {
+    new: "新卡",
+    learning: "學習中",
+    review: "複習",
+    relearning: "重新學習",
+  }[queue || "new"] || "新卡";
+}
+
+function formatDueTime(card) {
+  const timestamp = getCardDueAt(card);
+  const dateKey = timestampToDateKey(timestamp);
+  if (dateKey !== todayKey) return dateKey;
+  return new Date(timestamp).toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" });
 }
 
 function renderReview() {
@@ -571,7 +654,7 @@ function renderReview() {
   }
 
   const tagText = getTagNames(card.tagIds).join(", ") || "無分類";
-  const cardMeta = [tagText, card.partOfSpeech, getModuleLabel(card.module)].filter(Boolean).join(" · ");
+  const cardMeta = [getQueueLabel(card.queue), tagText, card.partOfSpeech, getModuleLabel(card.module)].filter(Boolean).join(" · ");
   els.reviewCard.innerHTML = `
     <div class="review-front">
       <span class="pill ${card.status === "needs-review" ? "warn" : ""}">${card.status === "needs-review" ? "待檢查" : "已確認"} · ${escapeHtml(cardMeta)}</span>
@@ -597,36 +680,122 @@ function renderReview() {
 function gradeCard(cardId, grade) {
   const card = state.cards.find((item) => item.id === cardId);
   if (!card) return;
-  const wasNew = card.reps === 0;
+  const previousQueue = card.queue || (card.reps > 0 ? "review" : "new");
   card.reps += 1;
-  if (grade === "again") {
-    card.interval = 0;
-    card.ease = Math.max(1.3, card.ease - 0.2);
-    card.lapses += 1;
-    card.due = todayKey;
-  } else if (grade === "hard") {
-    card.interval = Math.max(1, Math.ceil(card.interval * 1.2));
-    card.ease = Math.max(1.3, card.ease - 0.15);
-    card.due = addDays(card.interval);
-  } else if (grade === "easy") {
-    card.interval = card.interval === 0 ? 4 : Math.ceil(card.interval * (card.ease + 0.25));
-    card.ease += 0.15;
-    card.due = addDays(card.interval);
+  if (previousQueue === "new" || previousQueue === "learning") {
+    gradeLearningCard(card, grade);
+  } else if (previousQueue === "relearning") {
+    gradeRelearningCard(card, grade);
   } else {
-    card.interval = card.interval === 0 ? 1 : Math.ceil(card.interval * card.ease);
-    card.due = addDays(card.interval);
+    gradeReviewCard(card, grade);
   }
-  if (wasNew) state.progress.newDone += 1;
-  else state.progress.reviewDone += 1;
+  if (previousQueue === "new") state.progress.newDone += 1;
+  if (previousQueue === "review") state.progress.reviewDone += 1;
   activeReviewCardId = null;
   answerVisible = false;
   saveAndRender();
 }
 
-function addDays(days) {
-  const date = new Date();
-  date.setDate(date.getDate() + days);
-  return getLocalDateKey(date);
+function gradeLearningCard(card, grade) {
+  const steps = state.settings.scheduler.learningStepsMinutes;
+  const currentStep = card.queue === "learning" ? card.learningStep || 0 : -1;
+  if (grade === "again") {
+    card.queue = "learning";
+    card.learningStep = 0;
+    card.interval = 0;
+    card.ease = Math.max(state.settings.scheduler.minimumEase, card.ease - 0.2);
+    setCardDueInMinutes(card, steps[0] || 1);
+    return;
+  }
+  if (grade === "easy") {
+    graduateCard(card, state.settings.scheduler.easyInterval);
+    card.ease += 0.15;
+    return;
+  }
+  if (grade === "hard") {
+    card.queue = "learning";
+    card.learningStep = Math.max(0, currentStep);
+    card.ease = Math.max(state.settings.scheduler.minimumEase, card.ease - 0.15);
+    setCardDueInMinutes(card, Math.max(5, steps[card.learningStep] || steps[0] || 5));
+    return;
+  }
+  const nextStep = currentStep + 1;
+  if (nextStep < steps.length) {
+    card.queue = "learning";
+    card.learningStep = nextStep;
+    setCardDueInMinutes(card, steps[nextStep]);
+    return;
+  }
+  graduateCard(card, state.settings.scheduler.graduatingInterval);
+}
+
+function gradeRelearningCard(card, grade) {
+  const steps = state.settings.scheduler.relearningStepsMinutes;
+  if (grade === "again") {
+    card.lapses += 1;
+    card.ease = Math.max(state.settings.scheduler.minimumEase, card.ease - 0.2);
+    card.queue = "relearning";
+    card.learningStep = 0;
+    setCardDueInMinutes(card, steps[0] || 10);
+    return;
+  }
+  if (grade === "easy") {
+    graduateCard(card, Math.max(1, card.interval));
+    card.ease += 0.15;
+    return;
+  }
+  if (grade === "hard") {
+    card.ease = Math.max(state.settings.scheduler.minimumEase, card.ease - 0.15);
+    card.queue = "relearning";
+    card.learningStep = 0;
+    setCardDueInMinutes(card, Math.max(5, steps[0] || 10));
+    return;
+  }
+  graduateCard(card, Math.max(1, Math.ceil(card.interval * 0.5)));
+}
+
+function gradeReviewCard(card, grade) {
+  if (grade === "again") {
+    card.lapses += 1;
+    card.ease = Math.max(state.settings.scheduler.minimumEase, card.ease - 0.2);
+    card.interval = Math.max(1, Math.ceil(card.interval * 0.5));
+    card.queue = "relearning";
+    card.learningStep = 0;
+    setCardDueInMinutes(card, state.settings.scheduler.relearningStepsMinutes[0] || 10);
+    return;
+  }
+  if (grade === "hard") {
+    card.interval = Math.max(1, Math.ceil(card.interval * state.settings.scheduler.hardFactor * state.settings.scheduler.intervalModifier));
+    card.ease = Math.max(state.settings.scheduler.minimumEase, card.ease - 0.15);
+    scheduleReviewCard(card);
+    return;
+  }
+  if (grade === "easy") {
+    card.interval = Math.max(1, Math.ceil(card.interval * card.ease * state.settings.scheduler.easyBonus * state.settings.scheduler.intervalModifier));
+    card.ease += 0.15;
+    scheduleReviewCard(card);
+    return;
+  }
+  card.interval = Math.max(1, Math.ceil(card.interval * card.ease * state.settings.scheduler.intervalModifier));
+  scheduleReviewCard(card);
+}
+
+function graduateCard(card, interval) {
+  card.queue = "review";
+  card.learningStep = 0;
+  card.interval = Math.max(1, Math.ceil(interval));
+  scheduleReviewCard(card);
+}
+
+function scheduleReviewCard(card) {
+  card.queue = "review";
+  card.dueAt = addDaysTimestamp(card.interval);
+  card.due = timestampToDateKey(card.dueAt);
+}
+
+function setCardDueInMinutes(card, minutes) {
+  card.dueAt = addMinutes(minutes);
+  card.due = timestampToDateKey(card.dueAt);
 }
 
 function renderCards() {
@@ -649,7 +818,7 @@ function renderCards() {
 
 function cardRow(card) {
   const tagText = getTagNames(card.tagIds).join(", ") || "無分類";
-  const cardMeta = [tagText, card.partOfSpeech, getModuleLabel(card.module), `到期 ${card.due}`].filter(Boolean).join(" · ");
+  const cardMeta = [tagText, card.partOfSpeech, getModuleLabel(card.module), getQueueLabel(card.queue), `到期 ${formatDueTime(card)}`].filter(Boolean).join(" · ");
   if (editingCardId === card.id) {
     return `
       <article class="card-row editing" data-card-id="${card.id}">
