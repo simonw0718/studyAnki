@@ -97,9 +97,10 @@ const mockLexiconEntries = Object.entries(seedDictionary).map(([term, data], ind
 const initialState = {
   currentModule: "generic",
   tags: [
-    { id: "uncategorized", name: "無分類" },
-    { id: "words", name: "單字" },
-    { id: "grammar", name: "文法" },
+    { id: "generic-uncategorized", name: "無分類", module: "generic", system: true },
+    { id: "nihongo-uncategorized", name: "無分類", module: "nihongo", system: true },
+    { id: "words", name: "單字", module: "nihongo" },
+    { id: "grammar", name: "文法", module: "nihongo" },
   ],
   cards: createDemoCards(),
   settings: {
@@ -195,11 +196,13 @@ function loadState() {
 }
 
 function normalizeState(input) {
+  const rawCards = input.cards || [];
+  const rawTags = input.tags || input.decks || initialState.tags;
   const merged = {
     ...structuredClone(initialState),
     ...input,
     currentModule: input.currentModule || initialState.currentModule,
-    tags: input.tags || input.decks || initialState.tags,
+    tags: normalizeTags(rawTags, rawCards, input.currentModule || initialState.currentModule),
     notes: input.notes || "",
     settings: {
       ...initialState.settings,
@@ -211,18 +214,55 @@ function normalizeState(input) {
     },
     progress: { ...initialState.progress, ...(input.progress || {}) },
   };
-  merged.cards = (merged.cards || []).map((card) => ({
-    ...card,
-    module: card.module || "nihongo",
-    tagIds: card.tagIds || (card.deckId ? [card.deckId] : ["uncategorized"]),
-    queue: card.queue || (card.reps > 0 ? "review" : "new"),
-    learningStep: Number.isFinite(card.learningStep) ? card.learningStep : 0,
-    dueAt: card.dueAt || dateKeyToTimestamp(card.due || todayKey),
-  }));
+  merged.cards = (merged.cards || []).map((card) => {
+    const module = card.module || "nihongo";
+    const tagIds = normalizeCardTagIds(card.tagIds || (card.deckId ? [card.deckId] : []), module, merged.tags);
+    return {
+      ...card,
+      module,
+      tagIds,
+      queue: card.queue || (card.reps > 0 ? "review" : "new"),
+      learningStep: Number.isFinite(card.learningStep) ? card.learningStep : 0,
+      dueAt: card.dueAt || dateKeyToTimestamp(card.due || todayKey),
+    };
+  });
   if (merged.progress.date !== todayKey) {
     merged.progress = { date: todayKey, newDone: 0, reviewDone: 0 };
   }
   return merged;
+}
+
+function normalizeTags(tags, cards, fallbackModule) {
+  const baseTags = structuredClone(initialState.tags);
+  const seen = new Set(baseTags.map((tag) => tag.id));
+  const normalized = [...baseTags];
+  (tags || []).forEach((tag) => {
+    if (!tag || tag.id === "uncategorized" || seen.has(tag.id)) return;
+    const module = tag.module || inferTagModule(tag.id, cards, fallbackModule);
+    normalized.push({ ...tag, module });
+    seen.add(tag.id);
+  });
+  return normalized;
+}
+
+function inferTagModule(tagId, cards, fallbackModule = "generic") {
+  const counts = { generic: 0, nihongo: 0 };
+  (cards || []).forEach((card) => {
+    if ((card.tagIds || (card.deckId ? [card.deckId] : [])).includes(tagId)) {
+      counts[card.module || "nihongo"] += 1;
+    }
+  });
+  if (counts.nihongo > counts.generic) return "nihongo";
+  if (counts.generic > counts.nihongo) return "generic";
+  return fallbackModule || "generic";
+}
+
+function normalizeCardTagIds(tagIds, module, tags) {
+  const defaultTagId = getDefaultTagId(module);
+  const nextIds = (tagIds || [])
+    .map((tagId) => (tagId === "uncategorized" ? defaultTagId : tagId))
+    .filter((tagId) => tags.some((tag) => tag.id === tagId && tag.module === module));
+  return nextIds.length ? [...new Set(nextIds)] : [defaultTagId];
 }
 
 function saveState() {
@@ -288,7 +328,7 @@ function getEntryData() {
     return {
       module: "generic",
       type: "custom",
-      tagIds: ["uncategorized"],
+      tagIds: [getDefaultTagId("generic")],
       front: els.frontInput.value.trim(),
       back: els.backInput.value.trim(),
     };
@@ -340,7 +380,7 @@ function buildGeneratedCards(entry) {
   return cards.map((card) => ({
     id: id("card"),
     entryId,
-    tagIds: entry.tagIds.length ? entry.tagIds : ["uncategorized"],
+    tagIds: entry.tagIds.length ? entry.tagIds : [getDefaultTagId("nihongo")],
     module: "nihongo",
     type: entry.type,
     partOfSpeech: entry.partOfSpeech,
@@ -366,7 +406,7 @@ function buildGenericCard(entry) {
     {
       id: id("card"),
       entryId: id("entry"),
-      tagIds: entry.tagIds.length ? entry.tagIds : ["uncategorized"],
+      tagIds: entry.tagIds.length ? entry.tagIds : [getDefaultTagId("generic")],
       module: "generic",
       type: "custom",
       partOfSpeech: "",
@@ -560,10 +600,15 @@ function getSelectedTagIds() {
 
 function renderTagOptions() {
   const previousTagIds = getSelectedTagIds();
-  const selectedTagIds = previousTagIds.length ? previousTagIds : ["words"];
-  els.tagPicker.innerHTML = state.tags
+  const moduleTags = getCurrentModuleTags();
+  const defaultTagId = state.currentModule === "nihongo" && moduleTags.some((tag) => tag.id === "words")
+    ? "words"
+    : getDefaultTagId(state.currentModule);
+  const selectedTagIds = previousTagIds.filter((tagId) => moduleTags.some((tag) => tag.id === tagId));
+  const activeTagIds = selectedTagIds.length ? selectedTagIds : [defaultTagId];
+  els.tagPicker.innerHTML = moduleTags
     .map((tag) => {
-      const checked = selectedTagIds.includes(tag.id) ? "checked" : "";
+      const checked = activeTagIds.includes(tag.id) ? "checked" : "";
       return `
         <label>
           <input type="checkbox" value="${tag.id}" ${checked} />
@@ -572,7 +617,7 @@ function renderTagOptions() {
       `;
     })
     .join("");
-  const tagOptions = state.tags.map((tag) => `<option value="${tag.id}">${escapeHtml(tag.name)}</option>`).join("");
+  const tagOptions = moduleTags.map((tag) => `<option value="${tag.id}">${escapeHtml(tag.name)}</option>`).join("");
   els.cardTagFilter.innerHTML = `<option value="all">全部 Tag</option>${tagOptions}`;
 }
 
@@ -877,10 +922,11 @@ function getTagNames(tagIds = []) {
 }
 
 function renderDecks() {
-  els.deckList.innerHTML = state.tags
+  const moduleTags = getCurrentModuleTags();
+  els.deckList.innerHTML = moduleTags
     .map((tag) => {
-      const count = state.cards.filter((card) => (card.tagIds || []).includes(tag.id)).length;
-      const canDelete = tag.id !== "uncategorized";
+      const count = state.cards.filter((card) => card.module === state.currentModule && (card.tagIds || []).includes(tag.id)).length;
+      const canDelete = !tag.system;
       return `
         <div class="deck-item" data-tag-id="${tag.id}">
           <strong>${escapeHtml(tag.name)}</strong>
@@ -907,6 +953,14 @@ function renderNotes() {
 
 function getModuleLabel(module) {
   return module === "nihongo" ? "日文" : "通用";
+}
+
+function getCurrentModuleTags() {
+  return state.tags.filter((tag) => tag.module === state.currentModule);
+}
+
+function getDefaultTagId(module = state.currentModule) {
+  return module === "nihongo" ? "nihongo-uncategorized" : "generic-uncategorized";
 }
 
 function updateModuleUI() {
@@ -1074,7 +1128,7 @@ els.deckForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const name = els.deckNameInput.value.trim();
   if (!name) return;
-  state.tags.push({ id: id("tag"), name });
+  state.tags.push({ id: id("tag"), name, module: state.currentModule });
   els.deckNameInput.value = "";
   saveAndRender();
 });
@@ -1084,12 +1138,13 @@ els.deckList.addEventListener("click", (event) => {
   const row = event.target.closest("[data-tag-id]");
   if (!action || !row) return;
   const tag = state.tags.find((item) => item.id === row.dataset.tagId);
-  if (!tag || tag.id === "uncategorized") return;
-  const count = state.cards.filter((card) => (card.tagIds || []).includes(tag.id)).length;
+  if (!tag || tag.system || tag.module !== state.currentModule) return;
+  const count = state.cards.filter((card) => card.module === state.currentModule && (card.tagIds || []).includes(tag.id)).length;
   if (!confirm(`刪除 Tag「${tag.name}」？${count} 張卡片會移除這個 Tag。`)) return;
   state.cards.forEach((card) => {
+    if (card.module !== state.currentModule) return;
     card.tagIds = (card.tagIds || []).filter((tagId) => tagId !== tag.id);
-    if (!card.tagIds.length) card.tagIds = ["uncategorized"];
+    if (!card.tagIds.length) card.tagIds = [getDefaultTagId(state.currentModule)];
   });
   state.tags = state.tags.filter((item) => item.id !== tag.id);
   saveAndRender();
