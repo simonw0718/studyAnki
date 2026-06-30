@@ -161,6 +161,7 @@ let pendingDeleteCardId = null;
 let isLoggedIn = false;
 let loginEditMode = false;
 let loginHelpVisible = false;
+let renamingUserId = null;
 
 const els = {
   loginScreen: document.querySelector("#loginScreen"),
@@ -181,7 +182,6 @@ const els = {
   brandTitle: document.querySelector("#brandTitle"),
   brandSubtitle: document.querySelector("#brandSubtitle"),
   moduleSelect: document.querySelector("#moduleSelect"),
-  userSelect: document.querySelector("#userSelect"),
   showLoginBtn: document.querySelector("#showLoginBtn"),
   navItems: document.querySelectorAll(".nav-item"),
   entryForm: document.querySelector("#entryForm"),
@@ -1062,28 +1062,35 @@ function renderSettings() {
 }
 
 function renderUsers() {
-  els.userSelect.innerHTML = state.users
-    .map((user) => `<option value="${user.id}">${escapeHtml(user.name)}</option>`)
-    .join("");
-  els.userSelect.value = state.activeUserId;
   const activeUser = getActiveUser();
   els.activeUserLabel.textContent = activeUser.name;
+  els.showLoginBtn.textContent = `${activeUser.name} · 切換`;
   els.userList.innerHTML = state.users
     .map((user) => {
       const cardCount = state.cards.filter((card) => card.userId === user.id).length;
       const tagCount = state.tags.filter((tag) => tag.userId === user.id && !tag.system).length;
       const isActive = user.id === state.activeUserId;
       const canDelete = state.users.length > 1;
+      const isRenaming = renamingUserId === user.id;
       return `
         <div class="user-item" data-user-id="${user.id}">
           <div>
-            <strong>${escapeHtml(user.name)}</strong>
+            ${
+              isRenaming
+                ? `<input class="user-rename-input" data-rename-input value="${escapeHtml(user.name)}" />`
+                : `<strong>${escapeHtml(user.name)}</strong>`
+            }
             <p class="muted">${cardCount} 張卡片 · ${tagCount} 個自訂 Tag</p>
           </div>
           <div class="user-item-actions">
-            ${isActive ? `<span class="pill">目前</span>` : `<button data-action="switch-user" type="button">切換</button>`}
-            <button data-action="rename-user" type="button">更名</button>
-            ${canDelete ? `<button class="danger" data-action="delete-user" type="button">刪除</button>` : ""}
+            ${
+              isRenaming
+                ? `<button data-action="save-rename-user" type="button">儲存</button>
+                   <button data-action="cancel-rename-user" type="button">取消</button>`
+                : `${isActive ? `<span class="pill">目前</span>` : `<button data-action="switch-user" type="button">切換</button>`}
+                   <button data-action="rename-user" type="button">更名</button>
+                   ${canDelete ? `<button class="danger" data-action="delete-user" type="button">刪除</button>` : ""}`
+            }
           </div>
         </div>
       `;
@@ -1106,19 +1113,34 @@ function profileCard(user) {
   const cardCount = state.cards.filter((card) => card.userId === user.id).length;
   const isActive = user.id === state.activeUserId;
   const initial = user.name.trim().slice(0, 1) || "人";
+  const isRenaming = renamingUserId === user.id;
+  const profileContent = `
+    <span class="profile-avatar">${escapeHtml(initial)}</span>
+    ${
+      isRenaming
+        ? `<input class="user-rename-input" data-rename-input value="${escapeHtml(user.name)}" />`
+        : `<strong>${escapeHtml(user.name)}</strong>`
+    }
+    <small>${cardCount} 張卡片</small>
+  `;
   return `
     <article class="profile-card ${isActive ? "active" : ""}" data-user-id="${user.id}">
-      <button class="profile-card-button" data-action="login-user" type="button" ${loginEditMode ? "disabled" : ""}>
-        <span class="profile-avatar">${escapeHtml(initial)}</span>
-        <strong>${escapeHtml(user.name)}</strong>
-        <small>${cardCount} 張卡片</small>
-      </button>
+      ${
+        loginEditMode
+          ? `<div class="profile-card-button">${profileContent}</div>`
+          : `<button class="profile-card-button" data-action="login-user" type="button">${profileContent}</button>`
+      }
       ${
         loginEditMode
           ? `<div class="profile-edit-actions">
-              <button data-action="login-switch-user" type="button">${isActive ? "目前" : "切換"}</button>
-              <button data-action="login-rename-user" type="button">更名</button>
-              <button class="danger" data-action="login-delete-user" type="button">刪除</button>
+              ${
+                isRenaming
+                  ? `<button data-action="login-save-rename-user" type="button">儲存</button>
+                     <button data-action="login-cancel-rename-user" type="button">取消</button>`
+                  : `<button data-action="login-switch-user" type="button">${isActive ? "目前" : "切換"}</button>
+                     <button data-action="login-rename-user" type="button">更名</button>
+                     <button class="danger" data-action="login-delete-user" type="button">刪除</button>`
+              }
             </div>`
           : ""
       }
@@ -1169,13 +1191,33 @@ function addUser(name) {
   switchUser(user.id);
 }
 
-function renameUser(userId) {
+function startRenameUser(userId) {
   const user = state.users.find((item) => item.id === userId);
   if (!user) return;
-  const nextName = prompt("新的使用者名稱", user.name)?.trim();
+  renamingUserId = userId;
+  renderUsers();
+  renderLogin();
+  requestAnimationFrame(() => {
+    const input = document.querySelector(`[data-user-id="${CSS.escape(userId)}"] [data-rename-input]`);
+    input?.focus();
+    input?.select();
+  });
+}
+
+function saveRenameUser(userId, container) {
+  const user = state.users.find((item) => item.id === userId);
+  if (!user) return;
+  const nextName = container.querySelector("[data-rename-input]")?.value.trim();
   if (!nextName) return;
   user.name = nextName;
+  renamingUserId = null;
   saveAndRender();
+}
+
+function cancelRenameUser() {
+  renamingUserId = null;
+  renderUsers();
+  renderLogin();
 }
 
 function deleteUser(userId, shouldRender = true) {
@@ -1288,11 +1330,20 @@ els.profileGrid.addEventListener("click", (event) => {
   if (!action || !row) return;
   if (action.dataset.action === "login-user") enterApp(row.dataset.userId);
   if (action.dataset.action === "login-switch-user") switchUser(row.dataset.userId);
-  if (action.dataset.action === "login-rename-user") renameUser(row.dataset.userId);
+  if (action.dataset.action === "login-rename-user") startRenameUser(row.dataset.userId);
+  if (action.dataset.action === "login-save-rename-user") saveRenameUser(row.dataset.userId, row);
+  if (action.dataset.action === "login-cancel-rename-user") cancelRenameUser();
   if (action.dataset.action === "login-delete-user") {
     deleteUser(row.dataset.userId);
     renderLogin();
   }
+});
+
+els.profileGrid.addEventListener("keydown", (event) => {
+  const row = event.target.closest("[data-user-id]");
+  if (!row || !event.target.matches("[data-rename-input]")) return;
+  if (event.key === "Enter") saveRenameUser(row.dataset.userId, row);
+  if (event.key === "Escape") cancelRenameUser();
 });
 
 els.loginUserForm.addEventListener("submit", (event) => {
@@ -1312,14 +1363,11 @@ els.moduleSelect.addEventListener("change", () => {
   switchView(currentView);
 });
 
-els.userSelect.addEventListener("change", () => {
-  switchUser(els.userSelect.value);
-});
-
 els.showLoginBtn.addEventListener("click", () => {
   isLoggedIn = false;
   loginEditMode = false;
   loginHelpVisible = false;
+  renamingUserId = null;
   saveAndRender();
 });
 
@@ -1451,8 +1499,17 @@ els.userList.addEventListener("click", (event) => {
   const row = event.target.closest("[data-user-id]");
   if (!action || !row) return;
   if (action.dataset.action === "switch-user") switchUser(row.dataset.userId);
-  if (action.dataset.action === "rename-user") renameUser(row.dataset.userId);
+  if (action.dataset.action === "rename-user") startRenameUser(row.dataset.userId);
+  if (action.dataset.action === "save-rename-user") saveRenameUser(row.dataset.userId, row);
+  if (action.dataset.action === "cancel-rename-user") cancelRenameUser();
   if (action.dataset.action === "delete-user") deleteUser(row.dataset.userId);
+});
+
+els.userList.addEventListener("keydown", (event) => {
+  const row = event.target.closest("[data-user-id]");
+  if (!row || !event.target.matches("[data-rename-input]")) return;
+  if (event.key === "Enter") saveRenameUser(row.dataset.userId, row);
+  if (event.key === "Escape") cancelRenameUser();
 });
 
 [els.newLimitInput, els.reviewLimitInput].forEach((input) => {
