@@ -158,8 +158,20 @@ let activeReviewCardId = null;
 let answerVisible = false;
 let editingCardId = null;
 let pendingDeleteCardId = null;
+let isLoggedIn = false;
+let loginEditMode = false;
+let loginHelpVisible = false;
 
 const els = {
+  loginScreen: document.querySelector("#loginScreen"),
+  appShell: document.querySelector("#appShell"),
+  loginEditBtn: document.querySelector("#loginEditBtn"),
+  loginHelpBtn: document.querySelector("#loginHelpBtn"),
+  loginTitle: document.querySelector("#loginTitle"),
+  profileGrid: document.querySelector("#profileGrid"),
+  loginUserForm: document.querySelector("#loginUserForm"),
+  loginUserNameInput: document.querySelector("#loginUserNameInput"),
+  loginHelpPanel: document.querySelector("#loginHelpPanel"),
   dailyMax: document.querySelector("#dailyMax"),
   newCount: document.querySelector("#newCount"),
   reviewCount: document.querySelector("#reviewCount"),
@@ -170,6 +182,7 @@ const els = {
   brandSubtitle: document.querySelector("#brandSubtitle"),
   moduleSelect: document.querySelector("#moduleSelect"),
   userSelect: document.querySelector("#userSelect"),
+  showLoginBtn: document.querySelector("#showLoginBtn"),
   navItems: document.querySelectorAll(".nav-item"),
   entryForm: document.querySelector("#entryForm"),
   entryType: document.querySelector("#entryType"),
@@ -1077,6 +1090,48 @@ function renderUsers() {
     .join("");
 }
 
+function renderLogin() {
+  els.loginScreen.hidden = isLoggedIn;
+  els.appShell.hidden = !isLoggedIn;
+  els.loginTitle.textContent = loginEditMode ? "管理使用者" : "誰要開始複習？";
+  els.loginEditBtn.textContent = loginEditMode ? "完成" : "編輯使用者";
+  els.loginHelpBtn.textContent = loginHelpVisible ? "關閉說明" : "使用說明";
+  els.loginUserForm.hidden = !loginEditMode;
+  els.loginHelpPanel.hidden = !loginHelpVisible;
+  els.profileGrid.innerHTML = state.users.map(profileCard).join("");
+}
+
+function profileCard(user) {
+  const cardCount = state.cards.filter((card) => card.userId === user.id).length;
+  const isActive = user.id === state.activeUserId;
+  const initial = user.name.trim().slice(0, 1) || "人";
+  return `
+    <article class="profile-card ${isActive ? "active" : ""}" data-user-id="${user.id}">
+      <button class="profile-card-button" data-action="login-user" type="button" ${loginEditMode ? "disabled" : ""}>
+        <span class="profile-avatar">${escapeHtml(initial)}</span>
+        <strong>${escapeHtml(user.name)}</strong>
+        <small>${cardCount} 張卡片</small>
+      </button>
+      ${
+        loginEditMode
+          ? `<div class="profile-edit-actions">
+              <button data-action="login-switch-user" type="button">${isActive ? "目前" : "切換"}</button>
+              <button class="danger" data-action="login-delete-user" type="button">刪除</button>
+            </div>`
+          : ""
+      }
+    </article>
+  `;
+}
+
+function enterApp(userId) {
+  switchUser(userId, false);
+  isLoggedIn = true;
+  loginEditMode = false;
+  loginHelpVisible = false;
+  saveAndRender();
+}
+
 function renderNotes() {
   if (els.notesInput.value !== state.notes) {
     els.notesInput.value = state.notes;
@@ -1087,7 +1142,7 @@ function getActiveUser() {
   return state.users.find((user) => user.id === state.activeUserId) || state.users[0];
 }
 
-function switchUser(userId) {
+function switchUser(userId, shouldRender = true) {
   if (userId === state.activeUserId || !state.users.some((user) => user.id === userId)) return;
   state.progressByUser[state.activeUserId] = state.progress;
   state.notesByUser[state.activeUserId] = state.notes;
@@ -1098,7 +1153,7 @@ function switchUser(userId) {
   answerVisible = false;
   editingCardId = null;
   pendingDeleteCardId = null;
-  saveAndRender();
+  if (shouldRender) saveAndRender();
 }
 
 function addUser(name) {
@@ -1112,7 +1167,7 @@ function addUser(name) {
   switchUser(user.id);
 }
 
-function deleteUser(userId) {
+function deleteUser(userId, shouldRender = true) {
   if (state.users.length <= 1) return;
   const user = state.users.find((item) => item.id === userId);
   if (!user) return;
@@ -1129,7 +1184,7 @@ function deleteUser(userId) {
     state.notes = state.notesByUser[nextUser.id] || "";
     state.progress = getUserProgress(state.progressByUser, nextUser.id);
   }
-  saveAndRender();
+  if (shouldRender) saveAndRender();
 }
 
 function getModuleLabel(module) {
@@ -1192,6 +1247,7 @@ function saveAndRender(shouldSave = true) {
   renderSettings();
   renderUsers();
   renderNotes();
+  renderLogin();
 }
 
 function escapeHtml(value) {
@@ -1205,6 +1261,35 @@ function escapeHtml(value) {
 
 els.navItems.forEach((item) => item.addEventListener("click", () => switchView(item.dataset.view)));
 
+els.loginEditBtn.addEventListener("click", () => {
+  loginEditMode = !loginEditMode;
+  renderLogin();
+});
+
+els.loginHelpBtn.addEventListener("click", () => {
+  loginHelpVisible = !loginHelpVisible;
+  renderLogin();
+});
+
+els.profileGrid.addEventListener("click", (event) => {
+  const action = event.target.closest("[data-action]");
+  const row = event.target.closest("[data-user-id]");
+  if (!action || !row) return;
+  if (action.dataset.action === "login-user") enterApp(row.dataset.userId);
+  if (action.dataset.action === "login-switch-user") switchUser(row.dataset.userId);
+  if (action.dataset.action === "login-delete-user") {
+    deleteUser(row.dataset.userId);
+    renderLogin();
+  }
+});
+
+els.loginUserForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  addUser(els.loginUserNameInput.value);
+  els.loginUserNameInput.value = "";
+  renderLogin();
+});
+
 els.moduleSelect.addEventListener("change", () => {
   state.currentModule = els.moduleSelect.value;
   activeReviewCardId = null;
@@ -1217,6 +1302,13 @@ els.moduleSelect.addEventListener("change", () => {
 
 els.userSelect.addEventListener("change", () => {
   switchUser(els.userSelect.value);
+});
+
+els.showLoginBtn.addEventListener("click", () => {
+  isLoggedIn = false;
+  loginEditMode = false;
+  loginHelpVisible = false;
+  saveAndRender();
 });
 
 ["input", "change"].forEach((eventName) => {

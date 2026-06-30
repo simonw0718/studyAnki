@@ -5,7 +5,7 @@ StudyAnki is a browser-based spaced-repetition card app prototype with two modul
 - `Study Deck`: generic front/back cards
 - `Nihongo Deck`: Japanese card creation with dictionary lookup candidates
 
-The local data model supports multiple users. Cards, tags, notes, and daily review progress are scoped to the active user.
+The local data model supports multiple users. Cards, tags, notes, and daily review progress are scoped to the active user. The app opens on a profile selection screen where users can switch profiles, edit users, or read basic usage guidance.
 
 ## Local Development
 
