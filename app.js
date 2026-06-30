@@ -1082,6 +1082,7 @@ function renderUsers() {
           </div>
           <div class="user-item-actions">
             ${isActive ? `<span class="pill">目前</span>` : `<button data-action="switch-user" type="button">切換</button>`}
+            <button data-action="rename-user" type="button">更名</button>
             ${canDelete ? `<button class="danger" data-action="delete-user" type="button">刪除</button>` : ""}
           </div>
         </div>
@@ -1116,6 +1117,7 @@ function profileCard(user) {
         loginEditMode
           ? `<div class="profile-edit-actions">
               <button data-action="login-switch-user" type="button">${isActive ? "目前" : "切換"}</button>
+              <button data-action="login-rename-user" type="button">更名</button>
               <button class="danger" data-action="login-delete-user" type="button">刪除</button>
             </div>`
           : ""
@@ -1165,6 +1167,15 @@ function addUser(name) {
   state.notesByUser[user.id] = "";
   state.progressByUser[user.id] = { date: todayKey, newDone: 0, reviewDone: 0 };
   switchUser(user.id);
+}
+
+function renameUser(userId) {
+  const user = state.users.find((item) => item.id === userId);
+  if (!user) return;
+  const nextName = prompt("新的使用者名稱", user.name)?.trim();
+  if (!nextName) return;
+  user.name = nextName;
+  saveAndRender();
 }
 
 function deleteUser(userId, shouldRender = true) {
@@ -1277,6 +1288,7 @@ els.profileGrid.addEventListener("click", (event) => {
   if (!action || !row) return;
   if (action.dataset.action === "login-user") enterApp(row.dataset.userId);
   if (action.dataset.action === "login-switch-user") switchUser(row.dataset.userId);
+  if (action.dataset.action === "login-rename-user") renameUser(row.dataset.userId);
   if (action.dataset.action === "login-delete-user") {
     deleteUser(row.dataset.userId);
     renderLogin();
@@ -1439,6 +1451,7 @@ els.userList.addEventListener("click", (event) => {
   const row = event.target.closest("[data-user-id]");
   if (!action || !row) return;
   if (action.dataset.action === "switch-user") switchUser(row.dataset.userId);
+  if (action.dataset.action === "rename-user") renameUser(row.dataset.userId);
   if (action.dataset.action === "delete-user") deleteUser(row.dataset.userId);
 });
 
