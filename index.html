@@ -41,6 +41,11 @@
           </select>
         </label>
 
+        <label class="user-switch">
+          <span>使用者</span>
+          <select id="userSelect"></select>
+        </label>
+
         <section class="daily-box">
           <div>
             <span>今日到期</span>
@@ -190,6 +195,18 @@
         </section>
 
         <section class="view" id="view-settings">
+          <section class="user-panel">
+            <div class="panel-head">
+              <h3>使用者管理</h3>
+              <span id="activeUserLabel">使用者 A</span>
+            </div>
+            <form class="user-form" id="userForm">
+              <input id="userNameInput" placeholder="新增使用者名稱" required />
+              <button class="primary" type="submit">新增使用者</button>
+            </form>
+            <div class="user-list" id="userList"></div>
+          </section>
+
           <div class="settings-grid">
             <label>
               <span>每天新卡數</span>

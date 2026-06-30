@@ -15,6 +15,11 @@ const schedulerDefaults = {
   minimumEase: 1.3,
 };
 
+const defaultUsers = [
+  { id: "user-a", name: "使用者 A" },
+  { id: "user-b", name: "使用者 B" },
+];
+
 const seedDictionary = {
   "食べる": {
     type: "word",
@@ -95,36 +100,51 @@ const mockLexiconEntries = Object.entries(seedDictionary).map(([term, data], ind
 }));
 
 const initialState = {
+  activeUserId: "user-a",
+  users: structuredClone(defaultUsers),
   currentModule: "generic",
-  tags: [
-    { id: "generic-uncategorized", name: "無分類", module: "generic", system: true },
-    { id: "nihongo-uncategorized", name: "無分類", module: "nihongo", system: true },
-    { id: "words", name: "單字", module: "nihongo" },
-    { id: "grammar", name: "文法", module: "nihongo" },
-  ],
-  cards: createDemoCards(),
+  tags: createDefaultTags(defaultUsers),
+  cards: createDemoCards("user-a"),
   settings: {
     newLimit: 20,
     reviewLimit: 80,
     scheduler: schedulerDefaults,
   },
   notes: "",
+  notesByUser: {
+    "user-a": "",
+    "user-b": "",
+  },
   progress: {
     date: todayKey,
     newDone: 0,
     reviewDone: 0,
   },
+  progressByUser: {
+    "user-a": { date: todayKey, newDone: 0, reviewDone: 0 },
+    "user-b": { date: todayKey, newDone: 0, reviewDone: 0 },
+  },
 };
 
-function createDemoCards() {
+function createDefaultTags(users) {
+  return users.flatMap((user) => [
+    { id: `${user.id}-generic-uncategorized`, name: "無分類", module: "generic", userId: user.id, system: true },
+    { id: `${user.id}-nihongo-uncategorized`, name: "無分類", module: "nihongo", userId: user.id, system: true },
+    { id: `${user.id}-words`, name: "單字", module: "nihongo", userId: user.id },
+    { id: `${user.id}-grammar`, name: "文法", module: "nihongo", userId: user.id },
+  ]);
+}
+
+function createDemoCards(userId = "user-a") {
   return ["食べる", "見る", "見える"].flatMap((term) => {
     const data = seedDictionary[term];
     return buildGeneratedCards({
+      userId,
       term,
       module: "nihongo",
       type: data.type,
       partOfSpeech: data.partOfSpeech,
-      tagIds: ["words"],
+      tagIds: [`${userId}-words`],
       reading: data.reading,
       translations: data.translations,
       examples: data.examples,
@@ -149,6 +169,7 @@ const els = {
   brandTitle: document.querySelector("#brandTitle"),
   brandSubtitle: document.querySelector("#brandSubtitle"),
   moduleSelect: document.querySelector("#moduleSelect"),
+  userSelect: document.querySelector("#userSelect"),
   navItems: document.querySelectorAll(".nav-item"),
   entryForm: document.querySelector("#entryForm"),
   entryType: document.querySelector("#entryType"),
@@ -182,6 +203,10 @@ const els = {
   newLimitInput: document.querySelector("#newLimitInput"),
   reviewLimitInput: document.querySelector("#reviewLimitInput"),
   resetDemoBtn: document.querySelector("#resetDemoBtn"),
+  activeUserLabel: document.querySelector("#activeUserLabel"),
+  userForm: document.querySelector("#userForm"),
+  userNameInput: document.querySelector("#userNameInput"),
+  userList: document.querySelector("#userList"),
 };
 
 function loadState() {
@@ -198,12 +223,19 @@ function loadState() {
 function normalizeState(input) {
   const rawCards = input.cards || [];
   const rawTags = input.tags || input.decks || initialState.tags;
+  const users = normalizeUsers(input.users);
+  const activeUserId = users.some((user) => user.id === input.activeUserId) ? input.activeUserId : users[0].id;
+  const notesByUser = normalizeNotesByUser(input, users, activeUserId);
+  const progressByUser = normalizeProgressByUser(input, users, activeUserId);
   const merged = {
     ...structuredClone(initialState),
     ...input,
+    activeUserId,
+    users,
     currentModule: input.currentModule || initialState.currentModule,
-    tags: normalizeTags(rawTags, rawCards, input.currentModule || initialState.currentModule),
-    notes: input.notes || "",
+    tags: normalizeTags(rawTags, rawCards, users, activeUserId, input.currentModule || initialState.currentModule),
+    notes: notesByUser[activeUserId] || "",
+    notesByUser,
     settings: {
       ...initialState.settings,
       ...(input.settings || {}),
@@ -212,13 +244,16 @@ function normalizeState(input) {
         ...((input.settings || {}).scheduler || {}),
       },
     },
-    progress: { ...initialState.progress, ...(input.progress || {}) },
+    progress: getUserProgress(progressByUser, activeUserId),
+    progressByUser,
   };
   merged.cards = (merged.cards || []).map((card) => {
+    const userId = users.some((user) => user.id === card.userId) ? card.userId : activeUserId;
     const module = card.module || "nihongo";
-    const tagIds = normalizeCardTagIds(card.tagIds || (card.deckId ? [card.deckId] : []), module, merged.tags);
+    const tagIds = normalizeCardTagIds(card.tagIds || (card.deckId ? [card.deckId] : []), module, userId, merged.tags);
     return {
       ...card,
+      userId,
       module,
       tagIds,
       queue: card.queue || (card.reps > 0 ? "review" : "new"),
@@ -228,21 +263,80 @@ function normalizeState(input) {
   });
   if (merged.progress.date !== todayKey) {
     merged.progress = { date: todayKey, newDone: 0, reviewDone: 0 };
+    merged.progressByUser[activeUserId] = merged.progress;
   }
   return merged;
 }
 
-function normalizeTags(tags, cards, fallbackModule) {
-  const baseTags = structuredClone(initialState.tags);
+function normalizeUsers(users) {
+  const seen = new Set();
+  const normalized = [...defaultUsers, ...(users || [])]
+    .filter((user) => user && user.id && user.name)
+    .filter((user) => {
+      if (seen.has(user.id)) return false;
+      seen.add(user.id);
+      return true;
+    })
+    .map((user) => ({ id: user.id, name: user.name }));
+  return normalized.length ? normalized : structuredClone(defaultUsers);
+}
+
+function normalizeNotesByUser(input, users, activeUserId) {
+  const notesByUser = { ...(input.notesByUser || {}) };
+  if (input.notes && !notesByUser[activeUserId]) notesByUser[activeUserId] = input.notes;
+  users.forEach((user) => {
+    if (notesByUser[user.id] == null) notesByUser[user.id] = "";
+  });
+  return notesByUser;
+}
+
+function normalizeProgressByUser(input, users, activeUserId) {
+  const progressByUser = { ...(input.progressByUser || {}) };
+  if (input.progress && !progressByUser[activeUserId]) progressByUser[activeUserId] = input.progress;
+  users.forEach((user) => {
+    progressByUser[user.id] = getUserProgress(progressByUser, user.id);
+  });
+  return progressByUser;
+}
+
+function getUserProgress(progressByUser, userId) {
+  const progress = { ...initialState.progress, ...(progressByUser?.[userId] || {}) };
+  return progress.date === todayKey ? progress : { date: todayKey, newDone: 0, reviewDone: 0 };
+}
+
+function normalizeTags(tags, cards, users, activeUserId, fallbackModule) {
+  const baseTags = createDefaultTags(users);
   const seen = new Set(baseTags.map((tag) => tag.id));
   const normalized = [...baseTags];
   (tags || []).forEach((tag) => {
-    if (!tag || tag.id === "uncategorized" || seen.has(tag.id)) return;
+    if (!tag || tag.id === "uncategorized") return;
+    const userId = users.some((user) => user.id === tag.userId) ? tag.userId : inferTagUser(tag.id, cards, activeUserId);
     const module = tag.module || inferTagModule(tag.id, cards, fallbackModule);
-    normalized.push({ ...tag, module });
-    seen.add(tag.id);
+    const id = normalizeLegacyTagId(tag.id, userId);
+    if (seen.has(id)) return;
+    normalized.push({ ...tag, id, module, userId });
+    seen.add(id);
   });
   return normalized;
+}
+
+function inferTagUser(tagId, cards, fallbackUserId = "user-a") {
+  const counts = new Map();
+  (cards || []).forEach((card) => {
+    if ((card.tagIds || (card.deckId ? [card.deckId] : [])).includes(tagId)) {
+      const userId = card.userId || fallbackUserId;
+      counts.set(userId, (counts.get(userId) || 0) + 1);
+    }
+  });
+  return Array.from(counts.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || fallbackUserId;
+}
+
+function normalizeLegacyTagId(tagId, userId) {
+  if (tagId === "generic-uncategorized") return `${userId}-generic-uncategorized`;
+  if (tagId === "nihongo-uncategorized") return `${userId}-nihongo-uncategorized`;
+  if (tagId === "words") return `${userId}-words`;
+  if (tagId === "grammar") return `${userId}-grammar`;
+  return tagId;
 }
 
 function inferTagModule(tagId, cards, fallbackModule = "generic") {
@@ -257,15 +351,18 @@ function inferTagModule(tagId, cards, fallbackModule = "generic") {
   return fallbackModule || "generic";
 }
 
-function normalizeCardTagIds(tagIds, module, tags) {
-  const defaultTagId = getDefaultTagId(module);
+function normalizeCardTagIds(tagIds, module, userId, tags) {
+  const defaultTagId = getDefaultTagId(module, userId);
   const nextIds = (tagIds || [])
     .map((tagId) => (tagId === "uncategorized" ? defaultTagId : tagId))
-    .filter((tagId) => tags.some((tag) => tag.id === tagId && tag.module === module));
+    .map((tagId) => normalizeLegacyTagId(tagId, userId))
+    .filter((tagId) => tags.some((tag) => tag.id === tagId && tag.module === module && tag.userId === userId));
   return nextIds.length ? [...new Set(nextIds)] : [defaultTagId];
 }
 
 function saveState() {
+  state.progressByUser[state.activeUserId] = state.progress;
+  state.notesByUser[state.activeUserId] = state.notes;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
@@ -326,9 +423,10 @@ function formatMeaningExamples(translations, examples, partOfSpeech = "") {
 function getEntryData() {
   if (state.currentModule === "generic") {
     return {
+      userId: state.activeUserId,
       module: "generic",
       type: "custom",
-      tagIds: [getDefaultTagId("generic")],
+      tagIds: [getDefaultTagId("generic", state.activeUserId)],
       front: els.frontInput.value.trim(),
       back: els.backInput.value.trim(),
     };
@@ -345,6 +443,7 @@ function getEntryData() {
     ? parseExamples(els.examplesInput.value)
     : lookup?.examples.map((example) => ({ ja: example.ja, zh: example.zhTw })) || [];
   return {
+    userId: state.activeUserId,
     term,
     module: "nihongo",
     type,
@@ -380,7 +479,8 @@ function buildGeneratedCards(entry) {
   return cards.map((card) => ({
     id: id("card"),
     entryId,
-    tagIds: entry.tagIds.length ? entry.tagIds : [getDefaultTagId("nihongo")],
+    userId: entry.userId || state.activeUserId,
+    tagIds: entry.tagIds.length ? entry.tagIds : [getDefaultTagId("nihongo", entry.userId || state.activeUserId)],
     module: "nihongo",
     type: entry.type,
     partOfSpeech: entry.partOfSpeech,
@@ -406,7 +506,8 @@ function buildGenericCard(entry) {
     {
       id: id("card"),
       entryId: id("entry"),
-      tagIds: entry.tagIds.length ? entry.tagIds : [getDefaultTagId("generic")],
+      userId: entry.userId || state.activeUserId,
+      tagIds: entry.tagIds.length ? entry.tagIds : [getDefaultTagId("generic", entry.userId || state.activeUserId)],
       module: "generic",
       type: "custom",
       partOfSpeech: "",
@@ -601,9 +702,10 @@ function getSelectedTagIds() {
 function renderTagOptions() {
   const previousTagIds = getSelectedTagIds();
   const moduleTags = getCurrentModuleTags();
-  const defaultTagId = state.currentModule === "nihongo" && moduleTags.some((tag) => tag.id === "words")
-    ? "words"
-    : getDefaultTagId(state.currentModule);
+  const wordsTagId = `${state.activeUserId}-words`;
+  const defaultTagId = state.currentModule === "nihongo" && moduleTags.some((tag) => tag.id === wordsTagId)
+    ? wordsTagId
+    : getDefaultTagId(state.currentModule, state.activeUserId);
   const selectedTagIds = previousTagIds.filter((tagId) => moduleTags.some((tag) => tag.id === tagId));
   const activeTagIds = selectedTagIds.length ? selectedTagIds : [defaultTagId];
   els.tagPicker.innerHTML = moduleTags
@@ -637,12 +739,13 @@ function renderStats() {
   els.learningRemaining.textContent = String(rawLearningDue);
   els.reviewRemaining.textContent = `${reviewDue} / ${rawReviewDue}`;
   els.relearningRemaining.textContent = String(rawRelearningDue);
-  els.needsReviewCount.textContent = String(state.cards.filter((card) => card.status === "needs-review").length);
+  els.needsReviewCount.textContent = String(state.cards.filter((card) => card.userId === state.activeUserId && card.status === "needs-review").length);
 }
 
 function getRawDueCards() {
   const currentTime = now();
   return state.cards
+    .filter((card) => card.userId === state.activeUserId)
     .filter((card) => card.module === state.currentModule)
     .filter((card) => getCardDueAt(card) <= currentTime)
     .sort((a, b) => getQueuePriority(a) - getQueuePriority(b) || getCardDueAt(a) - getCardDueAt(b) || a.createdAt.localeCompare(b.createdAt));
@@ -848,7 +951,7 @@ function renderCards() {
   const tagFilter = els.cardTagFilter.value;
   const statusFilter = els.cardStatusFilter.value;
   const cards = state.cards.filter((card) => {
-    if (card.module !== state.currentModule) return false;
+    if (card.userId !== state.activeUserId || card.module !== state.currentModule) return false;
     const tagNames = getTagNames(card.tagIds);
     const haystack = [card.front, card.back, card.term, card.partOfSpeech || "", tagNames.join(" ")].join(" ").toLowerCase();
     const matchesSearch = !search || haystack.includes(search);
@@ -925,7 +1028,7 @@ function renderDecks() {
   const moduleTags = getCurrentModuleTags();
   els.deckList.innerHTML = moduleTags
     .map((tag) => {
-      const count = state.cards.filter((card) => card.module === state.currentModule && (card.tagIds || []).includes(tag.id)).length;
+      const count = state.cards.filter((card) => card.userId === state.activeUserId && card.module === state.currentModule && (card.tagIds || []).includes(tag.id)).length;
       const canDelete = !tag.system;
       return `
         <div class="deck-item" data-tag-id="${tag.id}">
@@ -945,10 +1048,88 @@ function renderSettings() {
   els.reviewLimitInput.value = state.settings.reviewLimit;
 }
 
+function renderUsers() {
+  els.userSelect.innerHTML = state.users
+    .map((user) => `<option value="${user.id}">${escapeHtml(user.name)}</option>`)
+    .join("");
+  els.userSelect.value = state.activeUserId;
+  const activeUser = getActiveUser();
+  els.activeUserLabel.textContent = activeUser.name;
+  els.userList.innerHTML = state.users
+    .map((user) => {
+      const cardCount = state.cards.filter((card) => card.userId === user.id).length;
+      const tagCount = state.tags.filter((tag) => tag.userId === user.id && !tag.system).length;
+      const isActive = user.id === state.activeUserId;
+      const canDelete = state.users.length > 1;
+      return `
+        <div class="user-item" data-user-id="${user.id}">
+          <div>
+            <strong>${escapeHtml(user.name)}</strong>
+            <p class="muted">${cardCount} 張卡片 · ${tagCount} 個自訂 Tag</p>
+          </div>
+          <div class="user-item-actions">
+            ${isActive ? `<span class="pill">目前</span>` : `<button data-action="switch-user" type="button">切換</button>`}
+            ${canDelete ? `<button class="danger" data-action="delete-user" type="button">刪除</button>` : ""}
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+}
+
 function renderNotes() {
   if (els.notesInput.value !== state.notes) {
     els.notesInput.value = state.notes;
   }
+}
+
+function getActiveUser() {
+  return state.users.find((user) => user.id === state.activeUserId) || state.users[0];
+}
+
+function switchUser(userId) {
+  if (userId === state.activeUserId || !state.users.some((user) => user.id === userId)) return;
+  state.progressByUser[state.activeUserId] = state.progress;
+  state.notesByUser[state.activeUserId] = state.notes;
+  state.activeUserId = userId;
+  state.progress = getUserProgress(state.progressByUser, userId);
+  state.notes = state.notesByUser[userId] || "";
+  activeReviewCardId = null;
+  answerVisible = false;
+  editingCardId = null;
+  pendingDeleteCardId = null;
+  saveAndRender();
+}
+
+function addUser(name) {
+  const cleanName = name.trim();
+  if (!cleanName) return;
+  const user = { id: id("user"), name: cleanName };
+  state.users.push(user);
+  state.tags.push(...createDefaultTags([user]));
+  state.notesByUser[user.id] = "";
+  state.progressByUser[user.id] = { date: todayKey, newDone: 0, reviewDone: 0 };
+  switchUser(user.id);
+}
+
+function deleteUser(userId) {
+  if (state.users.length <= 1) return;
+  const user = state.users.find((item) => item.id === userId);
+  if (!user) return;
+  const cardCount = state.cards.filter((card) => card.userId === userId).length;
+  if (!confirm(`刪除「${user.name}」？${cardCount} 張卡片與這位使用者的 Tag/筆記/進度會一起刪除。`)) return;
+  const nextUser = state.users.find((item) => item.id !== userId);
+  state.users = state.users.filter((item) => item.id !== userId);
+  state.cards = state.cards.filter((card) => card.userId !== userId);
+  state.tags = state.tags.filter((tag) => tag.userId !== userId);
+  delete state.notesByUser[userId];
+  delete state.progressByUser[userId];
+  if (state.activeUserId === userId && nextUser) {
+    state.activeUserId = nextUser.id;
+    state.notes = state.notesByUser[nextUser.id] || "";
+    state.progress = getUserProgress(state.progressByUser, nextUser.id);
+  }
+  saveAndRender();
 }
 
 function getModuleLabel(module) {
@@ -956,11 +1137,11 @@ function getModuleLabel(module) {
 }
 
 function getCurrentModuleTags() {
-  return state.tags.filter((tag) => tag.module === state.currentModule);
+  return state.tags.filter((tag) => tag.userId === state.activeUserId && tag.module === state.currentModule);
 }
 
-function getDefaultTagId(module = state.currentModule) {
-  return module === "nihongo" ? "nihongo-uncategorized" : "generic-uncategorized";
+function getDefaultTagId(module = state.currentModule, userId = state.activeUserId) {
+  return module === "nihongo" ? `${userId}-nihongo-uncategorized` : `${userId}-generic-uncategorized`;
 }
 
 function updateModuleUI() {
@@ -1009,6 +1190,7 @@ function saveAndRender(shouldSave = true) {
   renderCards();
   renderDecks();
   renderSettings();
+  renderUsers();
   renderNotes();
 }
 
@@ -1031,6 +1213,10 @@ els.moduleSelect.addEventListener("change", () => {
   pendingDeleteCardId = null;
   saveAndRender();
   switchView(currentView);
+});
+
+els.userSelect.addEventListener("change", () => {
+  switchUser(els.userSelect.value);
 });
 
 ["input", "change"].forEach((eventName) => {
@@ -1139,15 +1325,29 @@ els.deckList.addEventListener("click", (event) => {
   if (!action || !row) return;
   const tag = state.tags.find((item) => item.id === row.dataset.tagId);
   if (!tag || tag.system || tag.module !== state.currentModule) return;
-  const count = state.cards.filter((card) => card.module === state.currentModule && (card.tagIds || []).includes(tag.id)).length;
+  const count = state.cards.filter((card) => card.userId === state.activeUserId && card.module === state.currentModule && (card.tagIds || []).includes(tag.id)).length;
   if (!confirm(`刪除 Tag「${tag.name}」？${count} 張卡片會移除這個 Tag。`)) return;
   state.cards.forEach((card) => {
-    if (card.module !== state.currentModule) return;
+    if (card.userId !== state.activeUserId || card.module !== state.currentModule) return;
     card.tagIds = (card.tagIds || []).filter((tagId) => tagId !== tag.id);
-    if (!card.tagIds.length) card.tagIds = [getDefaultTagId(state.currentModule)];
+    if (!card.tagIds.length) card.tagIds = [getDefaultTagId(state.currentModule, state.activeUserId)];
   });
   state.tags = state.tags.filter((item) => item.id !== tag.id);
   saveAndRender();
+});
+
+els.userForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  addUser(els.userNameInput.value);
+  els.userNameInput.value = "";
+});
+
+els.userList.addEventListener("click", (event) => {
+  const action = event.target.closest("[data-action]");
+  const row = event.target.closest("[data-user-id]");
+  if (!action || !row) return;
+  if (action.dataset.action === "switch-user") switchUser(row.dataset.userId);
+  if (action.dataset.action === "delete-user") deleteUser(row.dataset.userId);
 });
 
 [els.newLimitInput, els.reviewLimitInput].forEach((input) => {
@@ -1173,6 +1373,7 @@ els.clearNotesBtn.addEventListener("click", () => {
 els.resetDemoBtn.addEventListener("click", () => {
   if (!confirm("重置會清除目前本機資料，確定嗎？")) return;
   state = structuredClone(initialState);
+  saveAndRender();
   switchView("review");
 });
 
