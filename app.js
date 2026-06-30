@@ -1064,7 +1064,7 @@ function renderSettings() {
 function renderUsers() {
   const activeUser = getActiveUser();
   els.activeUserLabel.textContent = activeUser.name;
-  els.showLoginBtn.textContent = `${activeUser.name} · 切換`;
+  els.showLoginBtn.textContent = `${activeUser.name} 切換`;
   els.userList.innerHTML = state.users
     .map((user) => {
       const cardCount = state.cards.filter((card) => card.userId === user.id).length;

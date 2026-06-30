@@ -274,6 +274,12 @@ h4 {
   color: #fff;
 }
 
+.header-controls {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+}
+
 .module-switch,
 .user-switch {
   display: grid;
@@ -300,6 +306,7 @@ h4 {
   min-height: 36px;
   padding: 0 12px;
   font-weight: 800;
+  white-space: nowrap;
 }
 
 .daily-box {
@@ -905,11 +912,19 @@ textarea {
     display: none;
   }
 
-  .module-switch {
+  .header-controls {
     position: absolute;
     top: calc(10px + env(safe-area-inset-top));
     right: 14px;
-    min-width: 112px;
+    flex-direction: row-reverse;
+    align-items: center;
+    gap: 6px;
+    max-width: calc(100vw - 128px);
+  }
+
+  .module-switch {
+    position: static;
+    min-width: 94px;
   }
 
   .user-switch {
@@ -918,6 +933,10 @@ textarea {
 
   .show-login-btn {
     min-height: 36px;
+    max-width: 118px;
+    overflow: hidden;
+    padding: 0 9px;
+    text-overflow: ellipsis;
   }
 
   .module-switch span,
@@ -1189,7 +1208,7 @@ textarea {
   }
 
   .module-switch {
-    min-width: 96px;
+    min-width: 86px;
   }
 
   .daily-box div {
