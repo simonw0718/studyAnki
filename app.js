@@ -20,6 +20,52 @@ const defaultUsers = [
   { id: "user-b", name: "使用者 B" },
 ];
 
+const builtinModules = [
+  { id: "generic", name: "通用", kind: "generic" },
+  { id: "nihongo", name: "日文", kind: "language" },
+  { id: "english", name: "英文", kind: "language" },
+];
+
+const nihongoPartOfSpeechOptions = [
+  "他動 G1",
+  "他動 G2",
+  "他動 G3",
+  "自動 G1",
+  "自動 G2",
+  "自動 G3",
+  "い形容詞",
+  "な形容詞",
+  "名詞",
+  "副詞",
+  "助詞",
+  "助動詞",
+  "接續詞",
+  "連體詞",
+  "感動詞",
+  "代名詞",
+  "數詞",
+  "接頭詞",
+  "接尾詞",
+  "表現",
+  "文法",
+];
+
+const englishPartOfSpeechOptions = [
+  "動詞",
+  "名詞",
+  "形容詞",
+  "副詞",
+  "片語動詞",
+  "介系詞",
+  "連接詞",
+  "代名詞",
+  "冠詞",
+  "感嘆詞",
+  "片語",
+  "慣用語",
+  "文法",
+];
+
 const seedDictionary = {
   "食べる": {
     type: "word",
@@ -103,6 +149,7 @@ const initialState = {
   activeUserId: "user-a",
   users: structuredClone(defaultUsers),
   currentModule: "generic",
+  genericModules: [],
   tags: createDefaultTags(defaultUsers),
   cards: createDemoCards("user-a"),
   settings: {
@@ -132,6 +179,9 @@ function createDefaultTags(users) {
     { id: `${user.id}-nihongo-uncategorized`, name: "無分類", module: "nihongo", userId: user.id, system: true },
     { id: `${user.id}-words`, name: "單字", module: "nihongo", userId: user.id },
     { id: `${user.id}-grammar`, name: "文法", module: "nihongo", userId: user.id },
+    { id: `${user.id}-english-uncategorized`, name: "無分類", module: "english", userId: user.id, system: true },
+    { id: `${user.id}-english-words`, name: "單字", module: "english", userId: user.id },
+    { id: `${user.id}-english-grammar`, name: "文法", module: "english", userId: user.id },
   ]);
 }
 
@@ -191,6 +241,7 @@ const els = {
   frontInput: document.querySelector("#frontInput"),
   backInput: document.querySelector("#backInput"),
   termInput: document.querySelector("#termInput"),
+  termLabel: document.querySelector("#termLabel"),
   readingInput: document.querySelector("#readingInput"),
   translationsInput: document.querySelector("#translationsInput"),
   examplesInput: document.querySelector("#examplesInput"),
@@ -220,6 +271,10 @@ const els = {
   userForm: document.querySelector("#userForm"),
   userNameInput: document.querySelector("#userNameInput"),
   userList: document.querySelector("#userList"),
+  builtinModuleList: document.querySelector("#builtinModuleList"),
+  genericModuleForm: document.querySelector("#genericModuleForm"),
+  genericModuleNameInput: document.querySelector("#genericModuleNameInput"),
+  genericModuleList: document.querySelector("#genericModuleList"),
 };
 
 function loadState() {
@@ -238,6 +293,10 @@ function normalizeState(input) {
   const rawTags = input.tags || input.decks || initialState.tags;
   const users = normalizeUsers(input.users);
   const activeUserId = users.some((user) => user.id === input.activeUserId) ? input.activeUserId : users[0].id;
+  const genericModules = normalizeGenericModules(input.genericModules, users);
+  const currentModule = isModuleAvailable(input.currentModule, activeUserId, genericModules)
+    ? input.currentModule
+    : initialState.currentModule;
   const notesByUser = normalizeNotesByUser(input, users, activeUserId);
   const progressByUser = normalizeProgressByUser(input, users, activeUserId);
   const merged = {
@@ -245,8 +304,9 @@ function normalizeState(input) {
     ...input,
     activeUserId,
     users,
-    currentModule: input.currentModule || initialState.currentModule,
-    tags: normalizeTags(rawTags, rawCards, users, activeUserId, input.currentModule || initialState.currentModule),
+    currentModule,
+    genericModules,
+    tags: normalizeTags(rawTags, rawCards, users, activeUserId, currentModule, genericModules),
     notes: notesByUser[activeUserId] || "",
     notesByUser,
     settings: {
@@ -279,6 +339,20 @@ function normalizeState(input) {
     merged.progressByUser[activeUserId] = merged.progress;
   }
   return merged;
+}
+
+function normalizeGenericModules(modules, users) {
+  const userIds = new Set(users.map((user) => user.id));
+  const blockedIds = new Set(builtinModules.map((module) => module.id));
+  const seen = new Set();
+  return (modules || [])
+    .filter((module) => module && module.id && module.name && userIds.has(module.userId) && !blockedIds.has(module.id))
+    .filter((module) => {
+      if (seen.has(module.id)) return false;
+      seen.add(module.id);
+      return true;
+    })
+    .map((module) => ({ id: module.id, name: module.name, userId: module.userId }));
 }
 
 function normalizeUsers(users) {
@@ -317,8 +391,17 @@ function getUserProgress(progressByUser, userId) {
   return progress.date === todayKey ? progress : { date: todayKey, newDone: 0, reviewDone: 0 };
 }
 
-function normalizeTags(tags, cards, users, activeUserId, fallbackModule) {
-  const baseTags = createDefaultTags(users);
+function normalizeTags(tags, cards, users, activeUserId, fallbackModule, genericModules = []) {
+  const baseTags = [
+    ...createDefaultTags(users),
+    ...genericModules.map((module) => ({
+      id: getDefaultTagId(module.id, module.userId),
+      name: "無分類",
+      module: module.id,
+      userId: module.userId,
+      system: true,
+    })),
+  ];
   const seen = new Set(baseTags.map((tag) => tag.id));
   const normalized = [...baseTags];
   (tags || []).forEach((tag) => {
@@ -347,18 +430,21 @@ function inferTagUser(tagId, cards, fallbackUserId = "user-a") {
 function normalizeLegacyTagId(tagId, userId) {
   if (tagId === "generic-uncategorized") return `${userId}-generic-uncategorized`;
   if (tagId === "nihongo-uncategorized") return `${userId}-nihongo-uncategorized`;
+  if (tagId === "english-uncategorized") return `${userId}-english-uncategorized`;
   if (tagId === "words") return `${userId}-words`;
   if (tagId === "grammar") return `${userId}-grammar`;
   return tagId;
 }
 
 function inferTagModule(tagId, cards, fallbackModule = "generic") {
-  const counts = { generic: 0, nihongo: 0 };
+  const counts = { generic: 0, nihongo: 0, english: 0 };
   (cards || []).forEach((card) => {
     if ((card.tagIds || (card.deckId ? [card.deckId] : [])).includes(tagId)) {
-      counts[card.module || "nihongo"] += 1;
+      const module = counts[card.module] == null ? "generic" : card.module || "nihongo";
+      counts[module] += 1;
     }
   });
+  if (counts.english > counts.nihongo && counts.english > counts.generic) return "english";
   if (counts.nihongo > counts.generic) return "nihongo";
   if (counts.generic > counts.nihongo) return "generic";
   return fallbackModule || "generic";
@@ -434,21 +520,22 @@ function formatMeaningExamples(translations, examples, partOfSpeech = "") {
 }
 
 function getEntryData() {
-  if (state.currentModule === "generic") {
+  if (isGenericModule(state.currentModule)) {
     return {
       userId: state.activeUserId,
-      module: "generic",
+      module: state.currentModule,
       type: "custom",
-      tagIds: [getDefaultTagId("generic", state.activeUserId)],
+      tagIds: [getDefaultTagId(state.currentModule, state.activeUserId)],
       front: els.frontInput.value.trim(),
       back: els.backInput.value.trim(),
     };
   }
   const term = els.termInput.value.trim();
-  const lookup = findLexiconCandidates(term)[0];
+  const isNihongo = state.currentModule === "nihongo";
+  const lookup = isNihongo ? findLexiconCandidates(term)[0] : null;
   const type = els.entryType.value;
   const partOfSpeech = els.partOfSpeechSelect.value;
-  const reading = els.readingInput.value.trim() || lookup?.reading || "";
+  const reading = isNihongo ? els.readingInput.value.trim() || lookup?.reading || "" : "";
   const translations = parseLines(els.translationsInput.value || "").length
     ? parseLines(els.translationsInput.value)
     : lookup?.senses.map((sense) => sense.zhTw) || [];
@@ -458,7 +545,7 @@ function getEntryData() {
   return {
     userId: state.activeUserId,
     term,
-    module: "nihongo",
+    module: state.currentModule,
     type,
     partOfSpeech,
     tagIds: getSelectedTagIds(),
@@ -469,21 +556,22 @@ function getEntryData() {
 }
 
 function buildGeneratedCards(entry) {
-  if (entry.module === "generic") return buildGenericCard(entry);
+  if (isGenericModule(entry.module)) return buildGenericCard(entry);
   if (!entry.term) return [];
   const entryId = id("entry");
   const typeLabel = entry.type === "grammar" ? "文法" : "單字";
+  const moduleLabel = getModuleLabel(entry.module);
   const meaningExamples = formatMeaningExamples(entry.translations, entry.examples, entry.partOfSpeech);
-  const japaneseFront = [entry.term, entry.reading].filter(Boolean).join("\n");
+  const languageFront = entry.module === "nihongo" ? [entry.term, entry.reading].filter(Boolean).join("\n") : entry.term;
 
   const cards = [
     {
-      template: `${typeLabel} 日文→中文`,
-      front: japaneseFront,
+      template: `${typeLabel} ${moduleLabel}→中文`,
+      front: languageFront,
       back: meaningExamples,
     },
     {
-      template: `${typeLabel} 中文→日文`,
+      template: `${typeLabel} 中文→${moduleLabel}`,
       front: meaningExamples,
       back: entry.term,
     },
@@ -493,8 +581,8 @@ function buildGeneratedCards(entry) {
     id: id("card"),
     entryId,
     userId: entry.userId || state.activeUserId,
-    tagIds: entry.tagIds.length ? entry.tagIds : [getDefaultTagId("nihongo", entry.userId || state.activeUserId)],
-    module: "nihongo",
+    tagIds: entry.tagIds.length ? entry.tagIds : [getDefaultTagId(entry.module, entry.userId || state.activeUserId)],
+    module: entry.module,
     type: entry.type,
     partOfSpeech: entry.partOfSpeech,
     term: entry.term,
@@ -520,8 +608,8 @@ function buildGenericCard(entry) {
       id: id("card"),
       entryId: id("entry"),
       userId: entry.userId || state.activeUserId,
-      tagIds: entry.tagIds.length ? entry.tagIds : [getDefaultTagId("generic", entry.userId || state.activeUserId)],
-      module: "generic",
+      tagIds: entry.tagIds.length ? entry.tagIds : [getDefaultTagId(entry.module, entry.userId || state.activeUserId)],
+      module: entry.module,
       type: "custom",
       partOfSpeech: "",
       term: entry.front,
@@ -715,8 +803,8 @@ function getSelectedTagIds() {
 function renderTagOptions() {
   const previousTagIds = getSelectedTagIds();
   const moduleTags = getCurrentModuleTags();
-  const wordsTagId = `${state.activeUserId}-words`;
-  const defaultTagId = state.currentModule === "nihongo" && moduleTags.some((tag) => tag.id === wordsTagId)
+  const wordsTagId = state.currentModule === "english" ? `${state.activeUserId}-english-words` : `${state.activeUserId}-words`;
+  const defaultTagId = isLanguageModule(state.currentModule) && moduleTags.some((tag) => tag.id === wordsTagId)
     ? wordsTagId
     : getDefaultTagId(state.currentModule, state.activeUserId);
   const selectedTagIds = previousTagIds.filter((tagId) => moduleTags.some((tag) => tag.id === tagId));
@@ -1059,6 +1147,46 @@ function renderDecks() {
 function renderSettings() {
   els.newLimitInput.value = state.settings.newLimit;
   els.reviewLimitInput.value = state.settings.reviewLimit;
+  els.builtinModuleList.innerHTML = builtinModules
+    .map((module) => {
+      const cardCount = state.cards.filter((card) => card.userId === state.activeUserId && card.module === module.id).length;
+      const tagCount = state.tags.filter((tag) => tag.userId === state.activeUserId && tag.module === module.id && !tag.system).length;
+      const isActive = state.currentModule === module.id;
+      const summary = module.kind === "language" ? "單字 / 文法自動製卡" : "正面 / 反面";
+      return `
+        <div class="user-item" data-module-id="${module.id}">
+          <div>
+            <strong>${escapeHtml(module.name)}</strong>
+            <p class="muted">${summary} · ${cardCount} 張卡片 · ${tagCount} 個自訂 Tag</p>
+          </div>
+          <div class="user-item-actions">
+            ${isActive ? `<span class="pill">目前</span>` : `<button data-action="switch-module" type="button">切換</button>`}
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+  const modules = state.genericModules.filter((module) => module.userId === state.activeUserId);
+  els.genericModuleList.innerHTML = modules.length
+    ? modules
+        .map((module) => {
+          const cardCount = state.cards.filter((card) => card.userId === state.activeUserId && card.module === module.id).length;
+          const tagCount = state.tags.filter((tag) => tag.userId === state.activeUserId && tag.module === module.id && !tag.system).length;
+          return `
+            <div class="user-item" data-generic-module-id="${module.id}">
+              <div>
+                <strong>${escapeHtml(module.name)}</strong>
+                <p class="muted">${cardCount} 張卡片 · ${tagCount} 個自訂 Tag</p>
+              </div>
+              <div class="user-item-actions">
+                ${state.currentModule === module.id ? `<span class="pill">目前</span>` : `<button data-action="switch-generic-module" type="button">切換</button>`}
+                <button class="danger" data-action="delete-generic-module" type="button">刪除</button>
+              </div>
+            </div>
+          `;
+        })
+        .join("")
+    : `<p class="muted">尚未新增自訂通用模式。</p>`;
 }
 
 function renderUsers() {
@@ -1171,6 +1299,7 @@ function switchUser(userId, shouldRender = true) {
   state.progressByUser[state.activeUserId] = state.progress;
   state.notesByUser[state.activeUserId] = state.notes;
   state.activeUserId = userId;
+  if (!isModuleAvailable(state.currentModule, userId)) state.currentModule = "generic";
   state.progress = getUserProgress(state.progressByUser, userId);
   state.notes = state.notesByUser[userId] || "";
   activeReviewCardId = null;
@@ -1189,6 +1318,39 @@ function addUser(name) {
   state.notesByUser[user.id] = "";
   state.progressByUser[user.id] = { date: todayKey, newDone: 0, reviewDone: 0 };
   switchUser(user.id);
+}
+
+function addGenericModule(name) {
+  const cleanName = name.trim();
+  if (!cleanName) return;
+  const module = { id: id("generic-module"), name: cleanName, userId: state.activeUserId };
+  state.genericModules.push(module);
+  state.tags.push({
+    id: getDefaultTagId(module.id, state.activeUserId),
+    name: "無分類",
+    module: module.id,
+    userId: state.activeUserId,
+    system: true,
+  });
+  state.currentModule = module.id;
+  activeReviewCardId = null;
+  answerVisible = false;
+  saveAndRender();
+  switchView("add");
+}
+
+function deleteGenericModule(moduleId) {
+  const module = state.genericModules.find((item) => item.id === moduleId && item.userId === state.activeUserId);
+  if (!module) return;
+  const cardCount = state.cards.filter((card) => card.userId === state.activeUserId && card.module === moduleId).length;
+  if (!confirm(`刪除通用模式「${module.name}」？${cardCount} 張卡片與這個模式的 Tag 會一起刪除。`)) return;
+  state.genericModules = state.genericModules.filter((item) => item.id !== moduleId);
+  state.cards = state.cards.filter((card) => !(card.userId === state.activeUserId && card.module === moduleId));
+  state.tags = state.tags.filter((tag) => !(tag.userId === state.activeUserId && tag.module === moduleId));
+  if (state.currentModule === moduleId) state.currentModule = "generic";
+  activeReviewCardId = null;
+  answerVisible = false;
+  saveAndRender();
 }
 
 function startRenameUser(userId) {
@@ -1230,6 +1392,7 @@ function deleteUser(userId, shouldRender = true) {
   state.users = state.users.filter((item) => item.id !== userId);
   state.cards = state.cards.filter((card) => card.userId !== userId);
   state.tags = state.tags.filter((tag) => tag.userId !== userId);
+  state.genericModules = state.genericModules.filter((module) => module.userId !== userId);
   delete state.notesByUser[userId];
   delete state.progressByUser[userId];
   if (state.activeUserId === userId && nextUser) {
@@ -1241,7 +1404,9 @@ function deleteUser(userId, shouldRender = true) {
 }
 
 function getModuleLabel(module) {
-  return module === "nihongo" ? "日文" : "通用";
+  if (module === "nihongo") return "日文";
+  if (module === "english") return "英文";
+  return state.genericModules.find((item) => item.id === module)?.name || "通用";
 }
 
 function getCurrentModuleTags() {
@@ -1249,26 +1414,77 @@ function getCurrentModuleTags() {
 }
 
 function getDefaultTagId(module = state.currentModule, userId = state.activeUserId) {
-  return module === "nihongo" ? `${userId}-nihongo-uncategorized` : `${userId}-generic-uncategorized`;
+  if (module === "nihongo") return `${userId}-nihongo-uncategorized`;
+  if (module === "english") return `${userId}-english-uncategorized`;
+  if (module === "generic") return `${userId}-generic-uncategorized`;
+  return `${userId}-${module}-uncategorized`;
 }
 
 function updateModuleUI() {
+  if (!isModuleAvailable(state.currentModule, state.activeUserId)) state.currentModule = "generic";
   const isNihongo = state.currentModule === "nihongo";
+  const isEnglish = state.currentModule === "english";
+  const isLanguage = isLanguageModule(state.currentModule);
+  const isGeneric = isGenericModule(state.currentModule);
+  renderModuleSelect();
   els.moduleSelect.value = state.currentModule;
-  document.title = isNihongo ? "Nihongo Deck" : "Study Deck";
-  els.brandMark.textContent = isNihongo ? "日" : "卡";
-  els.brandTitle.textContent = isNihongo ? "Nihongo Deck" : "Study Deck";
-  els.brandSubtitle.textContent = isNihongo ? "日文製卡與複習" : "泛用製卡與複習";
+  document.title = isNihongo ? "Nihongo Deck" : isEnglish ? "English Deck" : "Study Deck";
+  els.brandMark.textContent = isNihongo ? "日" : isEnglish ? "英" : "卡";
+  els.brandTitle.textContent = isNihongo ? "Nihongo Deck" : isEnglish ? "English Deck" : "Study Deck";
+  els.brandSubtitle.textContent = isNihongo ? "日文製卡與複習" : isEnglish ? "英文製卡與複習" : `${getModuleLabel(state.currentModule)}製卡與複習`;
   document.querySelectorAll("[data-module-field]").forEach((element) => {
-    element.hidden = element.dataset.moduleField !== state.currentModule;
+    const fields = element.dataset.moduleField.split(/\s+/);
+    element.hidden = !fields.includes(state.currentModule) && !(fields.includes("generic") && isGeneric);
   });
-  els.frontInput.required = !isNihongo;
-  els.backInput.required = !isNihongo;
-  els.termInput.required = isNihongo;
-  els.entryType.innerHTML = isNihongo
+  els.frontInput.required = isGeneric;
+  els.backInput.required = isGeneric;
+  els.termInput.required = isLanguage;
+  els.entryType.innerHTML = isLanguage
     ? `<option value="word">單字</option><option value="grammar">文法</option>`
     : `<option value="custom">自訂</option>`;
+  renderPartOfSpeechOptions();
+  els.termLabel.textContent = isEnglish ? "英文" : "日文";
+  els.termInput.placeholder = isEnglish ? "例：look up / take a break" : "例：食べる / 〜てもいい";
+  els.translationsInput.placeholder = isEnglish ? "例：查詢；查閱\n休息一下" : "例：吃\n食用\n生活；維生";
+  els.examplesInput.placeholder = isEnglish ? "例：I looked up the word.｜我查了這個單字。" : "例：朝ごはんを食べる。";
   els.candidateList.innerHTML = isNihongo ? els.candidateList.innerHTML : "";
+}
+
+function getAvailableModules(userId = state.activeUserId, genericModules = state.genericModules) {
+  return [
+    ...builtinModules,
+    ...genericModules
+      .filter((module) => module.userId === userId)
+      .map((module) => ({ id: module.id, name: module.name, kind: "generic" })),
+  ];
+}
+
+function isModuleAvailable(module, userId = state.activeUserId, genericModules = state.genericModules) {
+  return getAvailableModules(userId, genericModules).some((item) => item.id === module);
+}
+
+function isGenericModule(module) {
+  if (module === "generic") return true;
+  if (isLanguageModule(module)) return false;
+  return state.genericModules.some((item) => item.id === module);
+}
+
+function isLanguageModule(module) {
+  return module === "nihongo" || module === "english";
+}
+
+function renderModuleSelect() {
+  const options = getAvailableModules()
+    .map((module) => `<option value="${module.id}">${escapeHtml(module.name)}</option>`)
+    .join("");
+  if (els.moduleSelect.innerHTML !== options) els.moduleSelect.innerHTML = options;
+}
+
+function renderPartOfSpeechOptions() {
+  const options = state.currentModule === "english" ? englishPartOfSpeechOptions : nihongoPartOfSpeechOptions;
+  const previous = els.partOfSpeechSelect.value;
+  els.partOfSpeechSelect.innerHTML = options.map((option) => `<option value="${option}">${option}</option>`).join("");
+  els.partOfSpeechSelect.value = options.includes(previous) ? previous : options[0];
 }
 
 function switchView(view) {
@@ -1276,11 +1492,11 @@ function switchView(view) {
   document.querySelectorAll(".view").forEach((el) => el.classList.toggle("active", el.id === `view-${view}`));
   els.navItems.forEach((item) => item.classList.toggle("active", item.dataset.view === view));
   const titles = {
-    add: ["Add", state.currentModule === "nihongo" ? "新增日文單字 / 文法" : "新增自訂卡片"],
+    add: ["Add", isLanguageModule(state.currentModule) ? `新增${getModuleLabel(state.currentModule)}單字 / 文法` : "新增自訂卡片"],
     review: ["Review", "複習"],
     cards: ["Browser", "卡片瀏覽與編輯"],
     decks: ["Tags", "Tag 管理"],
-    settings: ["Options", "每日上限"],
+    settings: ["Options", "設定"],
     notes: ["Notes", "筆記清單"],
   };
   els.viewEyebrow.textContent = titles[view][0];
@@ -1466,7 +1682,7 @@ els.deckForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const name = els.deckNameInput.value.trim();
   if (!name) return;
-  state.tags.push({ id: id("tag"), name, module: state.currentModule });
+  state.tags.push({ id: id("tag"), name, module: state.currentModule, userId: state.activeUserId });
   els.deckNameInput.value = "";
   saveAndRender();
 });
@@ -1476,7 +1692,7 @@ els.deckList.addEventListener("click", (event) => {
   const row = event.target.closest("[data-tag-id]");
   if (!action || !row) return;
   const tag = state.tags.find((item) => item.id === row.dataset.tagId);
-  if (!tag || tag.system || tag.module !== state.currentModule) return;
+  if (!tag || tag.system || tag.module !== state.currentModule || tag.userId !== state.activeUserId) return;
   const count = state.cards.filter((card) => card.userId === state.activeUserId && card.module === state.currentModule && (card.tagIds || []).includes(tag.id)).length;
   if (!confirm(`刪除 Tag「${tag.name}」？${count} 張卡片會移除這個 Tag。`)) return;
   state.cards.forEach((card) => {
@@ -1492,6 +1708,41 @@ els.userForm.addEventListener("submit", (event) => {
   event.preventDefault();
   addUser(els.userNameInput.value);
   els.userNameInput.value = "";
+});
+
+els.genericModuleForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  addGenericModule(els.genericModuleNameInput.value);
+  els.genericModuleNameInput.value = "";
+});
+
+els.builtinModuleList.addEventListener("click", (event) => {
+  const action = event.target.closest("[data-action='switch-module']");
+  const row = event.target.closest("[data-module-id]");
+  if (!action || !row) return;
+  state.currentModule = row.dataset.moduleId;
+  activeReviewCardId = null;
+  answerVisible = false;
+  editingCardId = null;
+  pendingDeleteCardId = null;
+  saveAndRender();
+  switchView("add");
+});
+
+els.genericModuleList.addEventListener("click", (event) => {
+  const action = event.target.closest("[data-action]");
+  const row = event.target.closest("[data-generic-module-id]");
+  if (!action || !row) return;
+  if (action.dataset.action === "switch-generic-module") {
+    state.currentModule = row.dataset.genericModuleId;
+    activeReviewCardId = null;
+    answerVisible = false;
+    editingCardId = null;
+    pendingDeleteCardId = null;
+    saveAndRender();
+    switchView("add");
+  }
+  if (action.dataset.action === "delete-generic-module") deleteGenericModule(row.dataset.genericModuleId);
 });
 
 els.userList.addEventListener("click", (event) => {

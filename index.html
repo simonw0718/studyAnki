@@ -46,11 +46,12 @@
           <p class="muted">這是一個用來整理學習內容並安排每日複習的卡片工具。每位使用者可以保有自己的卡片、Tag 群組、筆記清單和複習進度。</p>
           <ol>
             <li>先點選自己的使用者卡片，進入自己的學習空間。</li>
-            <li>在「新增」建立卡片：通用模組可直接輸入正面和反面；日文模組可輸入單字或文法，產生日文與中文方向的卡片。</li>
+            <li>在「新增」建立卡片：通用模式可直接輸入正面和反面；日文與英文模式可輸入單字或文法，產生外語與中文方向的卡片。</li>
             <li>在「卡片」查看、搜尋、編輯、刪除卡片，也可以把待檢查的卡片標為已確認。</li>
             <li>在「Tag」建立群組，例如 N5、文法、易混淆、旅行。新增卡片時可選擇多個 Tag，之後也能用 Tag 篩選卡片。</li>
             <li>在「複習」依照按鈕回報記憶狀況。系統會依照重來、困難、普通、簡單安排下一次複習。</li>
             <li>在「筆記清單」先記下還沒整理成卡片的內容，之後再慢慢新增。</li>
+            <li>在「選項」可以新增自己的通用模式，例如考試、工作筆記或其他語言；不同模式的 Tag 和卡片會分開管理。</li>
             <li>按「編輯使用者」可以新增、更名或刪除使用者；不同使用者的卡片與進度會分開管理。</li>
           </ol>
         </section>
@@ -82,6 +83,7 @@
             <select id="moduleSelect">
               <option value="generic">通用</option>
               <option value="nihongo">日文</option>
+              <option value="english">英文</option>
             </select>
           </label>
 
@@ -115,13 +117,13 @@
         <section class="view" id="view-add">
           <form class="composer" id="entryForm">
             <div class="form-grid">
-              <label data-module-field="nihongo">
+              <label data-module-field="nihongo english">
                 <span>類型</span>
                 <select id="entryType">
                   <option value="custom">自訂</option>
                 </select>
               </label>
-              <label data-module-field="nihongo">
+              <label data-module-field="nihongo english">
                 <span>詞性</span>
                 <select id="partOfSpeechSelect">
                   <option value="他動 G1">他動 G1</option>
@@ -147,14 +149,14 @@
                   <option value="文法">文法</option>
                 </select>
               </label>
-              <label data-module-field="nihongo">
+              <label data-module-field="nihongo english">
                 <span>Tags</span>
                 <div class="tag-picker" id="tagPicker"></div>
               </label>
             </div>
 
-            <label data-module-field="nihongo">
-              <span>日文</span>
+            <label data-module-field="nihongo english">
+              <span id="termLabel">日文</span>
               <input id="termInput" autocomplete="off" placeholder="例：食べる / 〜てもいい" required />
             </label>
 
@@ -163,12 +165,12 @@
               <input id="readingInput" autocomplete="off" placeholder="例：たべる" />
             </label>
 
-            <label data-module-field="nihongo">
+            <label data-module-field="nihongo english">
               <span>翻譯，多個意思用換行分開</span>
               <textarea id="translationsInput" rows="4" placeholder="例：吃&#10;食用&#10;生活；維生"></textarea>
             </label>
 
-            <label data-module-field="nihongo">
+            <label data-module-field="nihongo english">
               <span>例句，每行對應一個翻譯</span>
               <textarea id="examplesInput" rows="4" placeholder="例：朝ごはんを食べる。"></textarea>
             </label>
@@ -239,6 +241,37 @@
         <section class="view" id="view-settings">
           <section class="user-panel">
             <div class="panel-head">
+              <h3>每日上限</h3>
+              <span>複習量</span>
+            </div>
+            <div class="settings-grid">
+              <label>
+                <span>每天新卡數</span>
+                <input id="newLimitInput" type="number" min="0" max="200" />
+              </label>
+              <label>
+                <span>每天複習數</span>
+                <input id="reviewLimitInput" type="number" min="0" max="500" />
+              </label>
+            </div>
+            <p class="muted">每日最大量 = 新卡上限 + 複習上限。正向卡和反向卡會分別計算。</p>
+          </section>
+
+          <section class="user-panel">
+            <div class="panel-head">
+              <h3>模組管理</h3>
+              <span>切換 / 新增</span>
+            </div>
+            <div class="user-list" id="builtinModuleList"></div>
+            <form class="user-form" id="genericModuleForm">
+              <input id="genericModuleNameInput" placeholder="新增模式名稱，例如 韓文 / 考試 / 工作筆記" required />
+              <button class="primary" type="submit">新增模式</button>
+            </form>
+            <div class="user-list" id="genericModuleList"></div>
+          </section>
+
+          <section class="user-panel">
+            <div class="panel-head">
               <h3>使用者管理</h3>
               <span id="activeUserLabel">使用者 A</span>
             </div>
@@ -249,17 +282,6 @@
             <div class="user-list" id="userList"></div>
           </section>
 
-          <div class="settings-grid">
-            <label>
-              <span>每天新卡數</span>
-              <input id="newLimitInput" type="number" min="0" max="200" />
-            </label>
-            <label>
-              <span>每天複習數</span>
-              <input id="reviewLimitInput" type="number" min="0" max="500" />
-            </label>
-          </div>
-          <p class="muted">每日最大量 = 新卡上限 + 複習上限。正向卡和反向卡會分別計算。</p>
           <section class="schedule-note">
             <h3>Anki-like 排程</h3>
             <p class="muted">新卡會先進入學習階段：1 分鐘、10 分鐘。答錯舊卡會進入重新學習：10 分鐘。畢業後才進入長期複習。</p>
@@ -297,6 +319,6 @@
       </article>
     </template>
 
-    <script src="./app.js"></script>
+    <script src="./app.js?v=202607011322"></script>
   </body>
 </html>
