@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build-static.mjs",
+    "deploy": "wrangler deploy --assets=./dist",
     "dev": "python3 server.py"
   }
 }

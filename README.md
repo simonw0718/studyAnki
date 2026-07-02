@@ -68,7 +68,13 @@ If Cloudflare shows a required `Deploy command` field, use the Workers Static As
 
 ```text
 Build command: npm run build
-Deploy command: npx wrangler deploy --assets=./dist
-Non-production branch deploy command: npx wrangler versions upload
+Deploy command: npm run deploy
+Non-production branch deploy command: npm run deploy
 Path: /
+```
+
+Do not use `npx wrangler deploy` by itself. This project is a static site, so Wrangler must receive the built assets directory. The `npm run deploy` script expands to:
+
+```bash
+wrangler deploy --assets=./dist
 ```
