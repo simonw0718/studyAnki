@@ -76,5 +76,5 @@ Path: /
 Do not use `npx wrangler deploy` by itself. This project is a static site, so Wrangler must receive the built assets directory. The `npm run deploy` script expands to:
 
 ```bash
-wrangler deploy --assets=./dist
+npx wrangler deploy --assets=./dist
 ```
